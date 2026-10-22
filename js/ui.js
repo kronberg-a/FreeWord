@@ -280,43 +280,8 @@ export function renderDashboard(cards, folders, reviewLogs, options = {}, callba
     }
   }
 
-  // 5. Update Quick Stats & Mastery Progress Bar
-  const stats = computeStats(cards, reviewLogs, { mode: activeMode, pair: selectedPair });
-  const total = stats.totalCards || 1;
-  const newPct = Math.round((stats.newCount / total) * 100);
-  const learnPct = Math.round((stats.learningCount / total) * 100);
-  const reviewPct = Math.round((stats.reviewCount / total) * 100);
-  const masteredPct = Math.round((stats.masteredCount / total) * 100);
-
-  const pBar = document.getElementById('dashboard-progress-bar');
-  if (pBar) {
-    pBar.innerHTML = `
-      <div class="progress-segment new" style="width: ${newPct}%" title="${t('statNew')}: ${stats.newCount}"></div>
-      <div class="progress-segment learning" style="width: ${learnPct}%" title="${t('statLearning')}: ${stats.learningCount}"></div>
-      <div class="progress-segment review" style="width: ${reviewPct}%" title="${t('statReview')}: ${stats.reviewCount}"></div>
-      <div class="progress-segment mastered" style="width: ${masteredPct}%" title="${t('statMastered')}: ${stats.masteredCount}"></div>
-    `;
-  }
-
-  const lNew = document.getElementById('bar-label-new');
-  const lLearn = document.getElementById('bar-label-learning');
-  const lRev = document.getElementById('bar-label-review');
-  const lMast = document.getElementById('bar-label-mastered');
-
-  if (lNew) lNew.textContent = `${t('statNew')}: ${stats.newCount}`;
-  if (lLearn) lLearn.textContent = `${t('statLearning')}: ${stats.learningCount}`;
-  if (lRev) lRev.textContent = `${t('statReview')}: ${stats.reviewCount}`;
-  if (lMast) lMast.textContent = `${t('statMastered')}: ${stats.masteredCount}`;
-
-  const dueBox = document.getElementById('stat-due-today');
-  const totalBox = document.getElementById('stat-total-cards');
-  const retBox = document.getElementById('stat-retention-rate');
-  const mastBox = document.getElementById('stat-mastered-cards');
-
-  if (dueBox) dueBox.textContent = stats.dueTodayCount;
-  if (totalBox) totalBox.textContent = stats.totalCards;
-  if (retBox) retBox.textContent = `${stats.retentionRate}%`;
-  if (mastBox) mastBox.textContent = stats.masteredCount;
+  // 5. Update Integrated Analytics & Performance Stats
+  renderAnalytics(cards, reviewLogs, { activeMode, selectedPair });
 }
 
 /**
@@ -1110,41 +1075,85 @@ export function renderLibraryTable(cards, folders = [], callbacks = {}) {
 }
 
 /**
- * Renders the analytics / stats view
+ * Renders the integrated analytics & forecast view
  */
-export function renderAnalytics(cards, logs) {
-  const stats = computeStats(cards, logs);
+export function renderAnalytics(cards, logs, options = {}) {
+  const { activeMode = 'all', selectedPair = 'all' } = options;
+  const stats = options.stats || computeStats(cards, logs, { mode: activeMode, pair: selectedPair });
 
-  const distEl = document.getElementById('stats-distribution-breakdown');
-  if (distEl) {
-    const total = stats.totalCards || 1;
-    distEl.innerHTML = `
-      <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
-        <span>${t('statNew')}</span>
-        <strong>${stats.newCount} (${Math.round(stats.newCount/total*100)}%)</strong>
-      </div>
-      <div class="progress-bar-container" style="margin: 0 0 10px 0;"><div class="progress-segment new" style="width: ${stats.newCount/total*100}%"></div></div>
+  const total = stats.totalCards || 1;
+  const newPct = Math.round((stats.newCount / total) * 100);
+  const learnPct = Math.round((stats.learningCount / total) * 100);
+  const reviewPct = Math.round((stats.reviewCount / total) * 100);
+  const masteredPct = Math.round((stats.masteredCount / total) * 100);
 
-      <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
-        <span>${t('statLearning')}</span>
-        <strong>${stats.learningCount} (${Math.round(stats.learningCount/total*100)}%)</strong>
-      </div>
-      <div class="progress-bar-container" style="margin: 0 0 10px 0;"><div class="progress-segment learning" style="width: ${stats.learningCount/total*100}%"></div></div>
-
-      <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
-        <span>${t('statReview')}</span>
-        <strong>${stats.reviewCount} (${Math.round(stats.reviewCount/total*100)}%)</strong>
-      </div>
-      <div class="progress-bar-container" style="margin: 0 0 10px 0;"><div class="progress-segment review" style="width: ${stats.reviewCount/total*100}%"></div></div>
-
-      <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
-        <span>${t('statMastered')}</span>
-        <strong>${stats.masteredCount} (${Math.round(stats.masteredCount/total*100)}%)</strong>
-      </div>
-      <div class="progress-bar-container" style="margin: 0 0 10px 0;"><div class="progress-segment mastered" style="width: ${stats.masteredCount/total*100}%"></div></div>
+  // Consolidated progress bar
+  const pBar = document.getElementById('dashboard-progress-bar');
+  if (pBar) {
+    pBar.innerHTML = `
+      <div class="progress-segment new" style="width: ${newPct}%" title="${t('statNew')}: ${stats.newCount}"></div>
+      <div class="progress-segment learning" style="width: ${learnPct}%" title="${t('statLearning')}: ${stats.learningCount}"></div>
+      <div class="progress-segment review" style="width: ${reviewPct}%" title="${t('statReview')}: ${stats.reviewCount}"></div>
+      <div class="progress-segment mastered" style="width: ${masteredPct}%" title="${t('statMastered')}: ${stats.masteredCount}"></div>
     `;
   }
 
+  const lNew = document.getElementById('bar-label-new');
+  const lLearn = document.getElementById('bar-label-learning');
+  const lRev = document.getElementById('bar-label-review');
+  const lMast = document.getElementById('bar-label-mastered');
+
+  if (lNew) lNew.textContent = `${t('statNew')}: ${stats.newCount}`;
+  if (lLearn) lLearn.textContent = `${t('statLearning')}: ${stats.learningCount}`;
+  if (lRev) lRev.textContent = `${t('statReview')}: ${stats.reviewCount}`;
+  if (lMast) lMast.textContent = `${t('statMastered')}: ${stats.masteredCount}`;
+
+  // Metric boxes
+  const dueBox = document.getElementById('stat-due-today');
+  const totalBox = document.getElementById('stat-total-cards');
+  const retBox = document.getElementById('stat-retention-rate');
+  const mastBox = document.getElementById('stat-mastered-cards');
+  const totalRevEl = document.getElementById('stats-total-reviews');
+  const avgEaseEl = document.getElementById('stats-avg-ease');
+
+  if (dueBox) dueBox.textContent = stats.dueTodayCount;
+  if (totalBox) totalBox.textContent = stats.totalCards;
+  if (retBox) retBox.textContent = `${stats.retentionRate}%`;
+  if (mastBox) mastBox.textContent = stats.masteredCount;
+  if (totalRevEl) totalRevEl.textContent = stats.totalReviews;
+  if (avgEaseEl) avgEaseEl.textContent = stats.avgEase;
+
+  // Detailed distribution breakdown
+  const distEl = document.getElementById('stats-distribution-breakdown');
+  if (distEl) {
+    distEl.innerHTML = `
+      <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+        <span>${t('statNew')}</span>
+        <strong>${stats.newCount} (${newPct}%)</strong>
+      </div>
+      <div class="progress-bar-container" style="margin: 0 0 10px 0;"><div class="progress-segment new" style="width: ${newPct}%"></div></div>
+
+      <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+        <span>${t('statLearning')}</span>
+        <strong>${stats.learningCount} (${learnPct}%)</strong>
+      </div>
+      <div class="progress-bar-container" style="margin: 0 0 10px 0;"><div class="progress-segment learning" style="width: ${learnPct}%"></div></div>
+
+      <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+        <span>${t('statReview')}</span>
+        <strong>${stats.reviewCount} (${reviewPct}%)</strong>
+      </div>
+      <div class="progress-bar-container" style="margin: 0 0 10px 0;"><div class="progress-segment review" style="width: ${reviewPct}%"></div></div>
+
+      <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+        <span>${t('statMastered')}</span>
+        <strong>${stats.masteredCount} (${masteredPct}%)</strong>
+      </div>
+      <div class="progress-bar-container" style="margin: 0 0 10px 0;"><div class="progress-segment mastered" style="width: ${masteredPct}%"></div></div>
+    `;
+  }
+
+  // 7-day forecast chart
   const forecastEl = document.getElementById('stats-forecast-chart');
   if (forecastEl) {
     const maxVal = Math.max(1, ...stats.forecast.map(f => f.count));
@@ -1153,18 +1162,12 @@ export function renderAnalytics(cards, logs) {
       return `
         <div class="forecast-bar-col">
           <span class="forecast-val">${f.count}</span>
-          <div class="forecast-bar" style="height: ${heightPct}%;"></div>
+          <div class="forecast-bar" style="height: ${heightPct}%;" title="${f.label}: ${f.count} ${t('headerDue')}"></div>
           <span class="forecast-label">${f.label}</span>
         </div>
       `;
     }).join('');
   }
-
-  const totalRevEl = document.getElementById('stats-total-reviews');
-  const avgEaseEl = document.getElementById('stats-avg-ease');
-
-  if (totalRevEl) totalRevEl.textContent = stats.totalReviews;
-  if (avgEaseEl) avgEaseEl.textContent = stats.avgEase;
 }
 
 // Helpers

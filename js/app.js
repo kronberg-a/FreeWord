@@ -98,10 +98,10 @@ function initApp() {
     themeBtn.addEventListener('click', toggleTheme);
   }
 
-  // Header quick stats click -> open stats view
+  // Header quick stats click -> open dashboard and scroll to analytics section
   const statsBadge = document.getElementById('header-stats-badge');
   if (statsBadge) {
-    statsBadge.addEventListener('click', () => switchView('stats'));
+    statsBadge.addEventListener('click', () => switchView('dashboard', 'dashboard-analytics-section'));
   }
 
   // Setup View Specific Event Handlers
@@ -177,7 +177,11 @@ function setupModeSwitcher() {
 /**
  * View Switcher
  */
-function switchView(viewName) {
+function switchView(viewName, scrollToId = null) {
+  if (viewName === 'stats') {
+    viewName = 'dashboard';
+    scrollToId = scrollToId || 'dashboard-analytics-section';
+  }
   state.currentView = viewName;
 
   // Toggle active class on navigation tabs
@@ -196,6 +200,15 @@ function switchView(viewName) {
   }
 
   refreshCurrentView();
+
+  if (scrollToId) {
+    setTimeout(() => {
+      const targetEl = document.getElementById(scrollToId);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 60);
+  }
 }
 
 /**
@@ -262,7 +275,8 @@ function refreshCurrentView() {
       break;
 
     case 'stats':
-      renderAnalytics(cards, logs);
+      state.currentView = 'dashboard';
+      refreshCurrentView();
       break;
 
     case 'settings':

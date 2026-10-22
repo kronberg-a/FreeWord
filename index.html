@@ -43,7 +43,6 @@
         <nav class="header-center nav-tabs" aria-label="Main Navigation">
           <button type="button" class="nav-tab-btn active" data-view="dashboard" data-i18n="navDashboard">Dashboard</button>
           <button type="button" class="nav-tab-btn" data-view="library" data-i18n="navLibrary">Library</button>
-          <button type="button" class="nav-tab-btn" data-view="stats" data-i18n="navStats">Analytics</button>
           <button type="button" class="nav-tab-btn" data-view="settings" data-i18n="navSettings">Settings</button>
         </nav>
 
@@ -185,29 +184,18 @@
           </div>
         </div>
 
-        <!-- QUICK OVERVIEW STATS BOX -->
-        <div class="card-panel">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h3 style="font-size: 1rem; font-weight: 700;" data-i18n="quickStats">Quick Overview</h3>
+        <!-- LEARNING ANALYTICS & OVERVIEW SECTION -->
+        <div class="dashboard-analytics-section" id="dashboard-analytics-section">
+          <div class="analytics-section-header">
+            <div class="analytics-title-group">
+              <span class="analytics-title-icon">📊</span>
+              <h2 data-i18n="statsTitle">Learning Analytics & Forecast</h2>
+            </div>
             <span class="badge badge-new" id="dashboard-active-mode-badge">All Cards</span>
           </div>
 
-          <!-- Progress Bar -->
-          <div class="progress-bar-container" id="dashboard-progress-bar" title="Mastery Distribution">
-            <div class="progress-segment new" style="width: 25%" title="New"></div>
-            <div class="progress-segment learning" style="width: 25%" title="Learning"></div>
-            <div class="progress-segment review" style="width: 25%" title="Review"></div>
-            <div class="progress-segment mastered" style="width: 25%" title="Mastered"></div>
-          </div>
-
-          <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 16px;">
-            <span id="bar-label-new">New: 0</span>
-            <span id="bar-label-learning">Learning: 0</span>
-            <span id="bar-label-review">Review: 0</span>
-            <span id="bar-label-mastered">Mastered: 0</span>
-          </div>
-
-          <div class="quick-stats-grid">
+          <!-- 6-Metric High-Density Grid -->
+          <div class="dashboard-metrics-grid">
             <div class="stat-box">
               <span class="stat-box-label" data-i18n="dueToday">Due Today</span>
               <span class="stat-box-value" id="stat-due-today" style="color: var(--color-danger);">0</span>
@@ -223,6 +211,54 @@
             <div class="stat-box">
               <span class="stat-box-label" data-i18n="statMastered">Mastered</span>
               <span class="stat-box-value" id="stat-mastered-cards" style="color: var(--accent-text);">0</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-box-label" data-i18n="totalReviewsLogged">Total Reviews</span>
+              <span class="stat-box-value" id="stats-total-reviews" style="color: var(--color-purple);">0</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-box-label" data-i18n="averageEaseFactor">Avg Ease Factor</span>
+              <span class="stat-box-value" id="stats-avg-ease" style="color: var(--color-warning);">2.50</span>
+            </div>
+          </div>
+
+          <!-- Visual Analytics Grid: Distribution Breakdown & 7-Day Forecast -->
+          <div class="analytics-charts-grid">
+            <!-- Card Mastery Distribution -->
+            <div class="chart-panel">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span class="chart-title" data-i18n="cardDistribution">Card Mastery Distribution</span>
+              </div>
+
+              <!-- Consolidated multi-segment progress bar -->
+              <div class="progress-bar-container" id="dashboard-progress-bar" title="Mastery Distribution">
+                <div class="progress-segment new" style="width: 25%" title="New"></div>
+                <div class="progress-segment learning" style="width: 25%" title="Learning"></div>
+                <div class="progress-segment review" style="width: 25%" title="Review"></div>
+                <div class="progress-segment mastered" style="width: 25%" title="Mastered"></div>
+              </div>
+
+              <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">
+                <span id="bar-label-new">New: 0</span>
+                <span id="bar-label-learning">Learning: 0</span>
+                <span id="bar-label-review">Review: 0</span>
+                <span id="bar-label-mastered">Mastered: 0</span>
+              </div>
+
+              <!-- Detailed breakdown per tier -->
+              <div id="stats-distribution-breakdown" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- Populated dynamically by ui.js -->
+              </div>
+            </div>
+
+            <!-- 7-Day Review Forecast -->
+            <div class="chart-panel">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span class="chart-title" data-i18n="reviewsForecast">7-Day Review Forecast</span>
+              </div>
+              <div class="forecast-chart" id="stats-forecast-chart">
+                <!-- Populated dynamically by ui.js -->
+              </div>
             </div>
           </div>
         </div>
@@ -345,41 +381,7 @@
         </div>
       </section>
 
-      <!-- 4. ANALYTICS / STATS VIEW -->
-      <section id="view-stats" class="view-section hidden">
-        <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 20px;" data-i18n="statsTitle">Learning Analytics & Forecast</h2>
-        
-        <div class="analytics-grid">
-          <!-- Card distribution -->
-          <div class="chart-panel">
-            <span class="chart-title" data-i18n="cardDistribution">Card Mastery Distribution</span>
-            <div id="stats-distribution-breakdown" style="display: flex; flex-direction: column; gap: 8px;">
-              <!-- Populated by JS -->
-            </div>
-          </div>
-
-          <!-- 7-day forecast -->
-          <div class="chart-panel">
-            <span class="chart-title" data-i18n="reviewsForecast">7-Day Review Forecast</span>
-            <div class="forecast-chart" id="stats-forecast-chart">
-              <!-- Populated by JS -->
-            </div>
-          </div>
-        </div>
-
-        <div class="analytics-grid">
-          <div class="card-panel">
-            <span class="chart-title" data-i18n="totalReviewsLogged">Total Reviews Logged</span>
-            <div style="font-size: 2.2rem; font-weight: 800; margin-top: 12px; color: var(--accent-text);" id="stats-total-reviews">0</div>
-          </div>
-          <div class="card-panel">
-            <span class="chart-title" data-i18n="averageEaseFactor">Average Ease Factor</span>
-            <div style="font-size: 2.2rem; font-weight: 800; margin-top: 12px; color: var(--color-warning);" id="stats-avg-ease">2.50</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 5. SETTINGS VIEW -->
+      <!-- 3. SETTINGS VIEW -->
       <section id="view-settings" class="view-section hidden">
         <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 20px;" data-i18n="settingsTitle">Preferences & System Settings</h2>
 
