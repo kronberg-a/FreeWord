@@ -428,6 +428,14 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
       </button>
     </div>
 
+    <!-- Success Next Bar (shown when word is answered correctly) -->
+    <div id="pass-continue-bar" class="hidden" style="margin-top: 14px; text-align: center;">
+      <button type="button" class="btn btn-primary btn-lg" id="btn-word-next" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        <span>${t('nextCard')} →</span>
+        <kbd class="kbd-badge" style="background: rgba(255,255,255,0.25); color: #fff; font-size: 0.75rem;">Enter</kbd>
+      </button>
+    </div>
+
     <!-- Failure Re-queue Continue Bar (shown when 3 attempts fail) -->
     <div id="requeue-continue-bar" class="hidden" style="margin-top: 12px; text-align: center;">
       <button type="button" class="btn btn-danger btn-lg" id="btn-requeue-continue" style="width: 100%;">
@@ -448,16 +456,18 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
   const btnJustFlip = document.getElementById('btn-just-flip');
 
   // Audio pronunciation listeners
-  const playAudio = async (btn) => {
-    btn.classList.add('speaking');
-    await speakText(card.front, langCode);
-    btn.classList.remove('speaking');
-  };
-
   const frontAudioBtn = document.getElementById('card-audio-btn-front');
   const backAudioBtn = document.getElementById('card-audio-btn-back');
-  if (frontAudioBtn) frontAudioBtn.addEventListener('click', (e) => { e.stopPropagation(); playAudio(frontAudioBtn); });
-  if (backAudioBtn) backAudioBtn.addEventListener('click', (e) => { e.stopPropagation(); playAudio(backAudioBtn); });
+  if (frontAudioBtn) frontAudioBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    frontAudioBtn.classList.add('speaking');
+    speakText(card.front, card.sourceLang || 'en').finally(() => frontAudioBtn.classList.remove('speaking'));
+  });
+  if (backAudioBtn) backAudioBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    backAudioBtn.classList.add('speaking');
+    speakText(card.back, card.targetLang || 'es').finally(() => backAudioBtn.classList.remove('speaking'));
+  });
 
   // Option 1: Just Flip card
   const doFlip = () => {
@@ -470,7 +480,7 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
   if (btnJustFlip) btnJustFlip.addEventListener('click', doFlip);
 
   flashcardEl.addEventListener('click', (e) => {
-    if (e.target.closest('.audio-btn') || e.target.closest('#word-recall-box') || e.target.closest('#btn-just-flip')) return;
+    if (e.target.closest('.audio-btn') || e.target.closest('#word-recall-box') || e.target.closest('#btn-just-flip') || e.target.closest('#pass-continue-bar')) return;
     if (!isFlipped) doFlip();
   });
 
@@ -516,14 +526,33 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
           : (attemptsRemaining === 2 ? t('correctAttempt2') : t('correctAttempt3'));
       }
 
-      // Reveal ratings toolbar
-      ratingsBar.classList.remove('hidden');
-
-      // Auto-pass with rating 3 (Good) or 4 (Easy)
+      // 1st attempt: Easy (4), 2nd attempt: Good (3), 3rd attempt: Hard (2)
       const passedRating = attemptsRemaining === 3 ? RATING.EASY : (attemptsRemaining === 2 ? RATING.GOOD : RATING.HARD);
-      if (callbacks.onPass) {
-        callbacks.onPass(passedRating);
+
+      // Reveal ratings toolbar and highlight the earned rating
+      ratingsBar.classList.remove('hidden');
+      ratingsBar.querySelectorAll('.rating-btn').forEach(btn => {
+        const btnRating = parseInt(btn.getAttribute('data-rating'), 10);
+        btn.classList.toggle('active-srs-grade', btnRating === passedRating);
+      });
+
+      // Show the NEXT button bar so the flip side stays visible unless user clicks NEXT
+      const passBar = document.getElementById('pass-continue-bar');
+      if (passBar) {
+        passBar.classList.remove('hidden');
       }
+
+      const btnWordNext = document.getElementById('btn-word-next');
+      if (btnWordNext) {
+        btnWordNext.focus();
+        btnWordNext.onclick = () => {
+          if (callbacks.onPass) {
+            callbacks.onPass(passedRating);
+          }
+        };
+      }
+
+      // Note: card is NOT auto-hidden. It stays visible until user clicks NEXT or selects a rating!
     } else {
       // INCORRECT ATTEMPT
       attemptsRemaining--;
@@ -858,10 +887,7 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
 
       renderEvaluationResults(evalResult, true);
       ratingsBar.classList.remove('hidden');
-
-      if (callbacks.onPass) {
-        callbacks.onPass(evalResult.suggestedRating);
-      }
+      // Stays visible until user clicks Accept Grade (or selects a rating).
     } else {
       // PARTIAL OR DIVERGENT MATCH (<75%)
       attemptsRemaining--;

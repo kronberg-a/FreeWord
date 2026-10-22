@@ -407,9 +407,14 @@ function loadNextStudyCard() {
     isRequeued
   };
 
+  let cardHandled = false;
+
   const callbacks = {
     // Called when user passes (correct recall, high fuzzy score, or manual pass)
     onPass: (rating = RATING.GOOD) => {
+      if (cardHandled) return;
+      cardHandled = true;
+
       const { updatedCard, reviewLog } = processReview(card, rating);
       updateCard(updatedCard);
       addReviewLog(reviewLog);
@@ -425,11 +430,14 @@ function loadNextStudyCard() {
       // Advance
       setTimeout(() => {
         loadNextStudyCard();
-      }, 350);
+      }, 80);
     },
 
     // Called when user fails (exhausted 3 attempts, or clicked Again/Fail)
     onFail: () => {
+      if (cardHandled) return;
+      cardHandled = true;
+
       const { updatedCard, reviewLog } = processReview(card, RATING.AGAIN);
       updateCard(updatedCard);
       addReviewLog(reviewLog);
@@ -499,9 +507,19 @@ function setupGlobalKeyboardShortcuts() {
     const session = state.studySession;
     if (!session || !session.studyController) return;
 
-    // Space: flip / reveal card (only if not typing)
+    // Space: flip / reveal card (only if not typing), or advance if next button is visible
     if (e.code === 'Space' && !isTyping) {
       e.preventDefault();
+      const btnNext = document.getElementById('btn-word-next');
+      if (btnNext && !btnNext.closest('.hidden')) {
+        btnNext.click();
+        return;
+      }
+      const btnAccept = document.getElementById('btn-accept-grade');
+      if (btnAccept && !btnAccept.closest('.hidden')) {
+        btnAccept.click();
+        return;
+      }
       if (session.studyController.flip) {
         session.studyController.flip();
       }
@@ -517,8 +535,20 @@ function setupGlobalKeyboardShortcuts() {
       return;
     }
 
-    // Enter key when failure continue button is visible
+    // Enter key when next button, failure continue button, or accept grade button is visible
     if (e.key === 'Enter') {
+      const btnNext = document.getElementById('btn-word-next');
+      if (btnNext && !btnNext.closest('.hidden')) {
+        e.preventDefault();
+        btnNext.click();
+        return;
+      }
+      const btnAccept = document.getElementById('btn-accept-grade');
+      if (btnAccept && !btnAccept.closest('.hidden')) {
+        e.preventDefault();
+        btnAccept.click();
+        return;
+      }
       const btnRequeue = document.getElementById('btn-requeue-continue') || document.getElementById('btn-def-requeue-continue');
       if (btnRequeue && !btnRequeue.closest('.hidden')) {
         e.preventDefault();
@@ -532,28 +562,11 @@ function setupGlobalKeyboardShortcuts() {
       const rating = parseInt(e.key, 10);
       const ratingsBar = document.querySelector('.srs-ratings-bar:not(.hidden)');
       if (ratingsBar) {
-        e.preventDefault();
-        const currentCard = session.activeQueue[0];
-        if (currentCard) {
-          if (rating === RATING.AGAIN) {
-            const { updatedCard, reviewLog } = processReview(currentCard, RATING.AGAIN);
-            updateCard(updatedCard);
-            addReviewLog(reviewLog);
-            const failedCard = session.activeQueue.shift();
-            session.activeQueue.push(failedCard);
-            session.requeuedCards.add(failedCard.id);
-            loadNextStudyCard();
-          } else {
-            const { updatedCard, reviewLog } = processReview(currentCard, rating);
-            updateCard(updatedCard);
-            addReviewLog(reviewLog);
-            if (!session.requeuedCards.has(currentCard.id)) {
-              session.firstPassCount++;
-            }
-            session.activeQueue.shift();
-            session.completedCards.add(currentCard.id);
-            loadNextStudyCard();
-          }
+        const ratingBtn = ratingsBar.querySelector(`.rating-btn[data-rating="${rating}"]`);
+        if (ratingBtn) {
+          e.preventDefault();
+          ratingBtn.click();
+          return;
         }
       }
     }

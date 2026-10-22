@@ -402,3 +402,14 @@
   color: var(--color-warning);
   border: 1px solid var(--color-warning);
 }
+
+.rating-btn.active-srs-grade {
+  border-color: var(--accent-primary) !important;
+  box-shadow: 0 0 0 2px var(--accent-primary) !important;
+  background-color: var(--accent-light) !important;
+}
+
+#pass-continue-bar {
+  margin-top: 14px;
+  animation: fadeIn 0.2s ease-out;
+}
