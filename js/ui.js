@@ -1,10 +1,12 @@
 /**
  * FreeWord - UI Rendering & View Controller
+ * Implements high-density, utilitarian interface components, Folder Hub,
+ * 3-attempt recall loop, fuzzy semantic evaluation diffs, and accessible modal flows.
  */
 
-import { t, getCurrentLanguage, setLanguage, SUPPORTED_LANGUAGES } from './i18n.js';
-import { RATING, STATUS, computeStats } from './srs.js';
-import { speakText, isAudioSupported } from './audio.js';
+import { t, getCurrentLanguage, SUPPORTED_LANGUAGES } from './i18n.js';
+import { RATING, STATUS, computeStats, getDailyStudiedCounts } from './srs.js';
+import { speakText } from './audio.js';
 import { evaluateDefinition, normalizeWord, hasFuzzyMatch } from './fuzzy.js';
 
 /**
@@ -47,83 +49,256 @@ export function showToast(message, duration = 2800) {
 }
 
 /**
- * Updates Header Quick Stats pill with Due / New / Mastered breakdown for active mode
+ * Updates Header Quick Stats pill & Daily Limit Indicators
  */
-export function updateHeaderStats(cards, logs, activeMode = 'word', selectedPair = 'all') {
-  const stats = computeStats(cards, logs, { mode: activeMode, pair: selectedPair });
+export function updateHeaderStats(cards, reviewLogs, activeMode = 'all', selectedPair = 'all', settings = {}) {
+  const stats = computeStats(cards, reviewLogs, { mode: activeMode, pair: selectedPair });
   const badge = document.getElementById('header-stats-badge');
-  if (!badge) return;
+  if (badge) {
+    badge.innerHTML = `
+      <span class="stat-pill-item"><span class="stat-pill-due">${stats.dueTodayCount}</span> ${t('headerDue')}</span>
+      <span class="stat-pill-dot">·</span>
+      <span class="stat-pill-item"><span class="stat-pill-new">${stats.newCount}</span> ${t('headerNew')}</span>
+      <span class="stat-pill-dot">·</span>
+      <span class="stat-pill-item"><span class="stat-pill-mastered">${stats.masteredCount}</span> ${t('headerMastered')}</span>
+    `;
+  }
 
-  badge.innerHTML = `
-    <span class="stat-pill-item"><span class="stat-pill-due">${stats.dueTodayCount}</span> ${t('headerDue')}</span>
-    <span class="stat-pill-dot">·</span>
-    <span class="stat-pill-item"><span class="stat-pill-new">${stats.newCount}</span> ${t('headerNew')}</span>
-    <span class="stat-pill-dot">·</span>
-    <span class="stat-pill-item"><span class="stat-pill-mastered">${stats.masteredCount}</span> ${t('headerMastered')}</span>
-  `;
+  // Update Daily Limits pill
+  const limitsPill = document.getElementById('header-limits-badge');
+  if (limitsPill) {
+    const dailyCounts = getDailyStudiedCounts(reviewLogs);
+    const newCap = settings.dailyNewLimitNoLimit ? '∞' : (settings.dailyNewLimit || 20);
+    const revCap = settings.dailyReviewLimitNoLimit ? '∞' : (settings.dailyReviewLimit || 50);
+
+    const newLabel = t('dailyNewLimitIndicator', { current: dailyCounts.newStudied, max: newCap });
+    const revLabel = t('dailyReviewLimitIndicator', { current: dailyCounts.reviewsStudied, max: revCap });
+
+    limitsPill.innerHTML = `
+      <span id="header-limits-new">${newLabel}</span>
+      <span class="stat-pill-dot">·</span>
+      <span id="header-limits-rev">${revLabel}</span>
+    `;
+  }
 }
 
 /**
- * Renders the Dashboard overview cards, progress bars and quick stats
+ * Renders the Dashboard overview: Session Launcher, Folder Manager & Quick Stats
  */
-export function renderDashboard(cards, logs, activeMode = 'word', selectedPair = 'all', onPairChange = null) {
-  const stats = computeStats(cards, logs, { mode: activeMode, pair: selectedPair });
-  
-  // Update hero texts based on mode
+export function renderDashboard(cards, folders, reviewLogs, options = {}, callbacks = {}) {
+  const {
+    activeMode = 'all',
+    selectedPair = 'all',
+    sessionType = 'mixed',
+    selectedFolderIds = []
+  } = options;
+
+  // 1. Update Mode Filter buttons in Header
+  document.querySelectorAll('.mode-toggle-group .mode-btn').forEach(btn => {
+    const btnMode = btn.getAttribute('data-mode');
+    const isActive = btnMode === activeMode;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', String(isActive));
+  });
+
   const modeBadge = document.getElementById('dashboard-active-mode-badge');
-  const heroSubtitle = document.getElementById('dashboard-hero-subtitle');
   if (modeBadge) {
-    modeBadge.textContent = activeMode === 'word' ? t('modeWords') : t('modeDefinitions');
-    modeBadge.className = activeMode === 'word' ? 'badge badge-new' : 'badge badge-review';
-  }
-  if (heroSubtitle) {
-    heroSubtitle.textContent = activeMode === 'word' ? t('wordsModeDesc') : t('definitionsModeDesc');
+    if (activeMode === 'word') {
+      modeBadge.textContent = t('modeWords');
+      modeBadge.className = 'badge badge-new';
+    } else if (activeMode === 'definition') {
+      modeBadge.textContent = t('modeDefinitions');
+      modeBadge.className = 'badge badge-review';
+    } else {
+      modeBadge.textContent = t('modeAll');
+      modeBadge.className = 'badge badge-mastered';
+    }
   }
 
-  // Populate or update Language Pair Dropdown
+  // 2. Language Pair Filter in Dashboard
   const pairSelect = document.getElementById('dashboard-pair-select');
   if (pairSelect) {
-    // Extract unique language pairs for active mode
-    const modeCards = cards.filter(c => c.mode === activeMode);
     const pairs = new Set();
-    modeCards.forEach(c => pairs.add(`${c.sourceLang}-${c.targetLang}`));
+    cards.forEach(c => {
+      if (activeMode === 'all' || c.mode === activeMode) {
+        pairs.add(`${c.sourceLang}-${c.targetLang}`);
+      }
+    });
 
-    const pairList = Array.from(pairs).sort();
+    const sortedPairs = Array.from(pairs).sort();
     let optionsHtml = `<option value="all">${t('filterAllPairs')}</option>`;
-    pairList.forEach(p => {
+    sortedPairs.forEach(p => {
       const [src, tgt] = p.split('-');
       optionsHtml += `<option value="${p}" ${p === selectedPair ? 'selected' : ''}>${src.toUpperCase()} → ${tgt.toUpperCase()}</option>`;
     });
 
     pairSelect.innerHTML = optionsHtml;
     pairSelect.value = selectedPair;
-
     pairSelect.onchange = (e) => {
-      if (onPairChange) onPairChange(e.target.value);
+      if (callbacks.onPairChange) callbacks.onPairChange(e.target.value);
     };
   }
 
-  // Update Hero Title and CTA based on due count
-  const heroTitle = document.getElementById('dashboard-hero-title');
-  const startBtn = document.getElementById('btn-start-review');
-  const startBtnText = document.getElementById('btn-start-review-text');
-  const dueBadge = document.getElementById('btn-due-count-badge');
+  // 3. Highlight Session Mode Selector Pill
+  document.querySelectorAll('.session-mode-pill').forEach(pill => {
+    const pillType = pill.getAttribute('data-session');
+    const isSelected = pillType === sessionType;
+    pill.classList.toggle('active', isSelected);
+    pill.setAttribute('aria-checked', String(isSelected));
+  });
 
-  if (stats.dueTodayCount === 0) {
-    if (heroTitle) heroTitle.textContent = t('allCaughtUp');
-    if (startBtnText) startBtnText.textContent = t('practiceAheadBtn');
-    if (dueBadge) dueBadge.textContent = '0';
-    if (startBtn) startBtn.classList.remove('btn-primary');
-    if (startBtn) startBtn.classList.add('btn-secondary');
+  // Calculate cards available in selected folders matching session type
+  const now = new Date();
+  const selectedCards = cards.filter(c => {
+    if (selectedFolderIds.length > 0 && !selectedFolderIds.includes(c.folderId)) return false;
+    if (activeMode !== 'all' && c.mode !== activeMode) return false;
+    if (selectedPair !== 'all' && `${c.sourceLang}-${c.targetLang}` !== selectedPair) return false;
+    return true;
+  });
+
+  let matchingCount = 0;
+  if (sessionType === 'learning') {
+    matchingCount = selectedCards.filter(c => c.status === STATUS.NEW || c.status === STATUS.LEARNING).length;
+  } else if (sessionType === 'reviewing') {
+    matchingCount = selectedCards.filter(c => (c.status === STATUS.REVIEW || c.status === STATUS.MASTERED) && new Date(c.nextReviewDate) <= now).length;
   } else {
-    if (heroTitle) heroTitle.textContent = t('readyToReview');
-    if (startBtnText) startBtnText.textContent = t('startReviewBtn');
-    if (dueBadge) dueBadge.textContent = String(stats.dueTodayCount);
-    if (startBtn) startBtn.classList.add('btn-primary');
-    if (startBtn) startBtn.classList.remove('btn-secondary');
+    // Mixed
+    matchingCount = selectedCards.filter(c => c.status === STATUS.NEW || c.status === STATUS.LEARNING || new Date(c.nextReviewDate) <= now).length;
   }
 
-  // Update Progress Bar
+  // Update Launcher UI counts
+  const summaryEl = document.getElementById('session-launcher-summary');
+  const countBadge = document.getElementById('btn-session-count-badge');
+  const readyBadge = document.getElementById('session-cards-ready-badge');
+  const zeroFoldersAlert = document.getElementById('session-zero-folders-alert');
+  const startBtn = document.getElementById('btn-start-session');
+
+  const selectedFolderCount = selectedFolderIds.length;
+  const totalFolderCount = folders.length;
+
+  if (zeroFoldersAlert) {
+    zeroFoldersAlert.classList.toggle('hidden', selectedFolderCount > 0);
+  }
+
+  if (summaryEl) {
+    if (selectedFolderCount === 0) {
+      summaryEl.textContent = t('selectFolderWarning');
+    } else {
+      summaryEl.textContent = `${t('selectedFoldersCount', { count: selectedFolderCount })} / ${totalFolderCount} • ${t('cardsReadyCount', { count: matchingCount })}`;
+    }
+  }
+
+  if (countBadge) countBadge.textContent = String(matchingCount);
+  if (readyBadge) readyBadge.textContent = t('cardsReadyCount', { count: matchingCount });
+
+  if (startBtn) {
+    startBtn.disabled = selectedFolderCount === 0 || matchingCount === 0;
+    startBtn.style.opacity = (selectedFolderCount === 0 || matchingCount === 0) ? '0.5' : '1';
+  }
+
+  // 4. Render Folder Cards Grid
+  const foldersGrid = document.getElementById('folder-cards-grid');
+  const totalFoldersBadge = document.getElementById('folders-total-badge');
+  if (totalFoldersBadge) totalFoldersBadge.textContent = String(folders.length);
+
+  if (foldersGrid) {
+    if (folders.length === 0) {
+      foldersGrid.innerHTML = `
+        <div style="grid-column: 1 / -1; padding: 32px; text-align: center; color: var(--text-muted); background: var(--bg-card); border-radius: var(--radius-lg); border: 1px dashed var(--border-color);">
+          <p>${t('noFolders')}</p>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-empty-create-folder" style="margin-top: 12px;">+ ${t('createFolder')}</button>
+        </div>
+      `;
+      const emptyBtn = document.getElementById('btn-empty-create-folder');
+      if (emptyBtn && callbacks.onOpenCreateFolder) {
+        emptyBtn.addEventListener('click', callbacks.onOpenCreateFolder);
+      }
+    } else {
+      foldersGrid.innerHTML = folders.map(folder => {
+        const isSelected = selectedFolderIds.includes(folder.id);
+        const folderCards = cards.filter(c => c.folderId === folder.id);
+
+        let dueCount = 0;
+        let newCount = 0;
+        folderCards.forEach(c => {
+          if (c.status === STATUS.NEW) newCount++;
+          else if (new Date(c.nextReviewDate) <= now) dueCount++;
+        });
+
+        const typeClass = folder.folderType === 'words' ? 'words' : (folder.folderType === 'definitions' ? 'definitions' : 'mixed');
+        const typeLabel = folder.folderType === 'words' ? t('folderWords') : (folder.folderType === 'definitions' ? t('folderDefinitions') : t('folderMixed'));
+
+        return `
+          <div class="folder-card ${isSelected ? 'selected' : ''}" data-folder-id="${folder.id}">
+            <div class="folder-card-top">
+              <input type="checkbox" class="folder-checkbox" ${isSelected ? 'checked' : ''} aria-label="Select folder ${escapeHtml(folder.name)} for study">
+              <div class="folder-card-info">
+                <div class="folder-card-title-row">
+                  <span class="folder-card-name">${escapeHtml(folder.name)}</span>
+                  <span class="folder-type-badge ${typeClass}">${typeLabel}</span>
+                </div>
+                <div class="folder-counts-row">
+                  <span class="folder-count-item"><span class="folder-count-due">${dueCount}</span> ${t('headerDue')}</span>
+                  <span class="stat-pill-dot">·</span>
+                  <span class="folder-count-item"><span class="folder-count-new">${newCount}</span> ${t('headerNew')}</span>
+                  <span class="stat-pill-dot">·</span>
+                  <span class="folder-count-item"><span>${folderCards.length}</span> ${t('totalCards')}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="folder-card-actions">
+              <button type="button" class="btn btn-ghost btn-sm folder-action-browse" title="${t('navLibrary')}">🔍 ${t('navLibrary')}</button>
+              <button type="button" class="btn btn-ghost btn-sm folder-action-add" title="${t('addNewCardBtn')}">+ ${t('addNewCardBtn')}</button>
+              <button type="button" class="btn btn-ghost btn-sm folder-action-edit" title="${t('editFolder')}">✏️</button>
+              <button type="button" class="btn btn-ghost btn-sm folder-action-delete" style="color: var(--color-danger);" title="${t('deleteFolder')}">🗑️</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Attach Folder Event Handlers
+      foldersGrid.querySelectorAll('.folder-card').forEach(cardEl => {
+        const folderId = cardEl.getAttribute('data-folder-id');
+        const checkbox = cardEl.querySelector('.folder-checkbox');
+
+        // Checkbox click
+        checkbox.addEventListener('change', (e) => {
+          if (callbacks.onToggleFolder) callbacks.onToggleFolder(folderId, e.target.checked);
+        });
+
+        // Clicking card selects folder unless an action button was clicked
+        cardEl.addEventListener('click', (e) => {
+          if (e.target.closest('button') || e.target.closest('.folder-checkbox')) return;
+          checkbox.checked = !checkbox.checked;
+          if (callbacks.onToggleFolder) callbacks.onToggleFolder(folderId, checkbox.checked);
+        });
+
+        // Browse
+        cardEl.querySelector('.folder-action-browse').addEventListener('click', () => {
+          if (callbacks.onBrowseFolder) callbacks.onBrowseFolder(folderId);
+        });
+
+        // Add Card
+        cardEl.querySelector('.folder-action-add').addEventListener('click', () => {
+          if (callbacks.onAddCardToFolder) callbacks.onAddCardToFolder(folderId);
+        });
+
+        // Edit Folder
+        cardEl.querySelector('.folder-action-edit').addEventListener('click', () => {
+          if (callbacks.onEditFolder) callbacks.onEditFolder(folderId);
+        });
+
+        // Delete Folder
+        cardEl.querySelector('.folder-action-delete').addEventListener('click', () => {
+          if (callbacks.onDeleteFolder) callbacks.onDeleteFolder(folderId);
+        });
+      });
+    }
+  }
+
+  // 5. Update Quick Stats & Mastery Progress Bar
+  const stats = computeStats(cards, reviewLogs, { mode: activeMode, pair: selectedPair });
   const total = stats.totalCards || 1;
   const newPct = Math.round((stats.newCount / total) * 100);
   const learnPct = Math.round((stats.learningCount / total) * 100);
@@ -140,7 +315,6 @@ export function renderDashboard(cards, logs, activeMode = 'word', selectedPair =
     `;
   }
 
-  // Labels under progress bar
   const lNew = document.getElementById('bar-label-new');
   const lLearn = document.getElementById('bar-label-learning');
   const lRev = document.getElementById('bar-label-review');
@@ -151,7 +325,6 @@ export function renderDashboard(cards, logs, activeMode = 'word', selectedPair =
   if (lRev) lRev.textContent = `${t('statReview')}: ${stats.reviewCount}`;
   if (lMast) lMast.textContent = `${t('statMastered')}: ${stats.masteredCount}`;
 
-  // Stat Boxes
   const dueBox = document.getElementById('stat-due-today');
   const totalBox = document.getElementById('stat-total-cards');
   const retBox = document.getElementById('stat-retention-rate');
@@ -165,25 +338,42 @@ export function renderDashboard(cards, logs, activeMode = 'word', selectedPair =
 
 /**
  * Renders the Study screen for Word Mode
- * Supports BOTH pure flashcard flipping AND active recall typing variant!
+ * Features BOTH:
+ *  1. Option 1: "Just Flip Card" (<kbd>Space</kbd>)
+ *  2. Option 2: "Type / Input the Word" (3-Attempt Rule with error shake & auto-reveal)
  */
-export function renderWordStudyCard(card, index, total, callbacks = {}) {
+export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
   const container = document.getElementById('study-active-area');
   if (!container) return;
 
-  const currentNum = index + 1;
-  const progressPct = Math.round((currentNum / total) * 100);
+  const {
+    currentNumber = 1,
+    remainingInSession = 1,
+    totalInitial = 1,
+    isRequeued = false
+  } = queueInfo;
+
+  const progressPct = Math.round((Math.max(0, totalInitial - remainingInSession + 1) / totalInitial) * 100);
 
   // Update header progress
   const counterEl = document.getElementById('study-progress-counter');
+  const remainingEl = document.getElementById('study-queue-remaining');
   const progBarEl = document.getElementById('study-progress-bar');
   const modeInd = document.getElementById('study-mode-indicator');
 
-  if (counterEl) counterEl.textContent = t('cardOf', { current: currentNum, total });
+  if (counterEl) counterEl.textContent = t('cardOf', { current: currentNumber, total: totalInitial });
+  if (remainingEl) {
+    remainingEl.textContent = isRequeued 
+      ? `⚡ ${t('cardRequeued')}`
+      : `${remainingInSession} ${t('headerDue').toLowerCase()}`;
+    remainingEl.className = isRequeued ? 'badge badge-learning' : 'badge badge-new';
+  }
   if (progBarEl) progBarEl.style.width = `${progressPct}%`;
   if (modeInd) modeInd.textContent = `${t('modeWords')} • ${card.sourceLang.toUpperCase()} → ${card.targetLang.toUpperCase()}`;
 
   const langCode = card.sourceLang || 'en';
+  let attemptsRemaining = 3;
+  let isFlipped = false;
 
   container.innerHTML = `
     <div class="flashcard-wrapper" id="flashcard-wrapper">
@@ -192,26 +382,46 @@ export function renderWordStudyCard(card, index, total, callbacks = {}) {
         <div class="flashcard-face flashcard-front">
           <div class="card-face-header">
             <span class="card-lang-tag">${card.sourceLang.toUpperCase()}</span>
-            <button type="button" class="audio-btn" id="card-audio-btn-front" title="${t('pronounceWord')}">
-              🔊
-            </button>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="attempt-badge" id="attempt-badge">${t('attemptsRemaining', { n: 3 })}</span>
+              <button type="button" class="audio-btn" id="card-audio-btn-front" title="${t('pronounceWord')}">
+                🔊
+              </button>
+            </div>
           </div>
           
           <div class="card-center-prompt">
             <h1 class="card-term">${escapeHtml(card.front)}</h1>
             ${card.contextSentence ? `
-              <div class="card-context-quote" style="margin-top: 12px;">“${escapeHtml(card.contextSentence)}”</div>
+              <div class="card-context-quote" style="margin-top: 10px;">“${escapeHtml(card.contextSentence)}”</div>
             ` : ''}
-            
-            <!-- Optional Active Recall Typing Variant -->
-            <div class="word-recall-box" id="word-recall-box" onclick="event.stopPropagation();">
-              <input type="text" id="word-recall-input" class="word-recall-input" placeholder="${t('recallPlaceholder')}" autocomplete="off" spellcheck="false">
-              <button type="button" id="word-recall-check-btn" class="btn btn-secondary btn-sm">${t('checkRecallBtn')}</button>
+
+            <!-- OPTION 2: ACTIVE INPUT (3 ATTEMPTS) -->
+            <div class="word-recall-box" id="word-recall-box" onclick="event.stopPropagation();" style="margin-top: 20px;">
+              <input type="text" id="word-recall-input" class="word-recall-input" placeholder="${t('typeYourTranslation')}" autocomplete="off" spellcheck="false" autofocus>
+              <button type="button" id="word-recall-check-btn" class="btn btn-primary btn-sm">
+                <span>✓</span>
+                <span>${t('shortcutEnterSubmit')}</span>
+              </button>
             </div>
+
+            <!-- Feedback Alert for Attempts -->
+            <div id="word-attempt-feedback" class="attempt-feedback-box hidden"></div>
+
+            <div class="study-choice-divider">
+              <span>${t('optionJustFlip')} (Space)</span>
+            </div>
+
+            <!-- OPTION 1: JUST FLIP BUTTON -->
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-just-flip" style="align-self: center;" onclick="event.stopPropagation();">
+              <span>🔄</span>
+              <span>${t('optionJustFlip')}</span>
+            </button>
           </div>
 
           <div class="card-face-footer">
-            <span>${t('clickToFlip')} (${t('pressSpaceToFlip')})</span>
+            <span>${t('pressSpaceToFlip')}</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted);">${t('sessionQueueRemaining', { count: remainingInSession })}</span>
           </div>
         </div>
 
@@ -228,7 +438,7 @@ export function renderWordStudyCard(card, index, total, callbacks = {}) {
             <div style="font-size: 1.1rem; color: var(--text-muted); margin-bottom: 4px;">${escapeHtml(card.front)}</div>
             <div class="card-translation-reveal">${escapeHtml(card.back)}</div>
             
-            <!-- Recall Check Feedback Banner (if user typed) -->
+            <!-- Recall Outcome Banner -->
             <div id="recall-feedback-banner" class="recall-feedback-banner hidden"></div>
             
             ${card.contextSentence ? `<div class="card-context-quote" style="margin-top: 12px;">“${escapeHtml(card.contextSentence)}”</div>` : ''}
@@ -242,84 +452,52 @@ export function renderWordStudyCard(card, index, total, callbacks = {}) {
       </div>
     </div>
 
-    <!-- Rating Buttons Bar (Hidden initially, shown when flipped) -->
+    <!-- Rating Buttons Bar (Hidden initially, revealed when flipped) -->
     <div class="srs-ratings-bar hidden" id="study-ratings-bar">
-      <button type="button" class="rating-btn again" data-rating="1" title="Shortcut: 1">
-        <span class="rating-label">${t('ratingAgain')}</span>
-        <span class="rating-hint">1d</span>
+      <!-- Direct Pass / Fail quick actions for in-session loop -->
+      <button type="button" class="rating-btn again" data-rating="1" title="Shortcut: 1 (Re-queue to end of session)">
+        <span class="rating-label">${t('failCardBtn')}</span>
+        <span class="rating-hint">${t('cardRequeued')}</span>
         <span class="rating-key-badge">1</span>
       </button>
+
       <button type="button" class="rating-btn hard" data-rating="2" title="Shortcut: 2">
         <span class="rating-label">${t('ratingHard')}</span>
         <span class="rating-hint">~${Math.max(1, Math.round((card.interval || 0) * 1.2))}d</span>
         <span class="rating-key-badge">2</span>
       </button>
-      <button type="button" class="rating-btn good" data-rating="3" title="Shortcut: 3">
-        <span class="rating-label">${t('ratingGood')}</span>
-        <span class="rating-hint">~${card.repetitions === 0 ? 1 : (card.repetitions === 1 ? 6 : Math.round((card.interval || 1) * (card.easeFactor || 2.5)))}d</span>
+
+      <button type="button" class="rating-btn good" data-rating="3" title="Shortcut: 3 (Pass - removes from session)">
+        <span class="rating-label">${t('passCardBtn')}</span>
+        <span class="rating-hint">${t('cardPassed')}</span>
         <span class="rating-key-badge">3</span>
       </button>
-      <button type="button" class="rating-btn easy" data-rating="4" title="Shortcut: 4">
+
+      <button type="button" class="rating-btn easy" data-rating="4" title="Shortcut: 4 (Easy - accelerated interval)">
         <span class="rating-label">${t('ratingEasy')}</span>
-        <span class="rating-hint">~${card.repetitions === 0 ? 4 : (card.repetitions === 1 ? 8 : Math.round((card.interval || 1) * (card.easeFactor || 2.5) * 1.3))}d</span>
+        <span class="rating-hint">~${card.repetitions === 0 ? 4 : Math.round((card.interval || 1) * (card.easeFactor || 2.5) * 1.3)}d</span>
         <span class="rating-key-badge">4</span>
+      </button>
+    </div>
+
+    <!-- Failure Re-queue Continue Bar (shown when 3 attempts fail) -->
+    <div id="requeue-continue-bar" class="hidden" style="margin-top: 12px; text-align: center;">
+      <button type="button" class="btn btn-danger btn-lg" id="btn-requeue-continue" style="width: 100%;">
+        <span>🔄</span>
+        <span>${t('continueRequeued')} (Enter)</span>
       </button>
     </div>
   `;
 
   const flashcardEl = document.getElementById('study-flashcard');
   const ratingsBar = document.getElementById('study-ratings-bar');
+  const requeueBar = document.getElementById('requeue-continue-bar');
   const recallInput = document.getElementById('word-recall-input');
   const recallCheckBtn = document.getElementById('word-recall-check-btn');
+  const attemptBadge = document.getElementById('attempt-badge');
+  const attemptFeedback = document.getElementById('word-attempt-feedback');
   const feedbackBanner = document.getElementById('recall-feedback-banner');
-
-  let isFlipped = false;
-
-  const doFlip = (typedText = '') => {
-    isFlipped = true;
-    flashcardEl.classList.add('flipped');
-    ratingsBar.classList.remove('hidden');
-
-    if (typedText && feedbackBanner) {
-      const cleanTyped = normalizeWord(typedText);
-      const cleanBack = normalizeWord(card.back);
-      const backTokens = cleanBack.split(/\s+/);
-      const isMatch = cleanBack.includes(cleanTyped) || hasFuzzyMatch(cleanTyped, backTokens, card.back);
-
-      feedbackBanner.classList.remove('hidden');
-      if (isMatch) {
-        feedbackBanner.className = 'recall-feedback-banner match-good';
-        feedbackBanner.textContent = `✓ ${t('matchCorrect')} ("${typedText}")`;
-      } else {
-        feedbackBanner.className = 'recall-feedback-banner match-divergent';
-        feedbackBanner.textContent = `"${typedText}" → ${t('matchDivergent')}`;
-      }
-    }
-  };
-
-  flashcardEl.addEventListener('click', (e) => {
-    if (e.target.closest('.audio-btn') || e.target.closest('#word-recall-box')) return;
-    if (!isFlipped) doFlip();
-  });
-
-  // Active recall typing submit
-  const handleRecallSubmit = () => {
-    const text = recallInput ? recallInput.value.trim() : '';
-    doFlip(text);
-  };
-
-  if (recallCheckBtn) {
-    recallCheckBtn.addEventListener('click', handleRecallSubmit);
-  }
-
-  if (recallInput) {
-    recallInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleRecallSubmit();
-      }
-    });
-  }
+  const btnJustFlip = document.getElementById('btn-just-flip');
 
   // Audio pronunciation listeners
   const playAudio = async (btn) => {
@@ -330,19 +508,158 @@ export function renderWordStudyCard(card, index, total, callbacks = {}) {
 
   const frontAudioBtn = document.getElementById('card-audio-btn-front');
   const backAudioBtn = document.getElementById('card-audio-btn-back');
-  if (frontAudioBtn) frontAudioBtn.addEventListener('click', () => playAudio(frontAudioBtn));
-  if (backAudioBtn) backAudioBtn.addEventListener('click', () => playAudio(backAudioBtn));
+  if (frontAudioBtn) frontAudioBtn.addEventListener('click', (e) => { e.stopPropagation(); playAudio(frontAudioBtn); });
+  if (backAudioBtn) backAudioBtn.addEventListener('click', (e) => { e.stopPropagation(); playAudio(backAudioBtn); });
 
-  // Rating buttons listeners
+  // Option 1: Just Flip card
+  const doFlip = () => {
+    if (isFlipped) return;
+    isFlipped = true;
+    flashcardEl.classList.add('flipped');
+    ratingsBar.classList.remove('hidden');
+  };
+
+  if (btnJustFlip) btnJustFlip.addEventListener('click', doFlip);
+
+  flashcardEl.addEventListener('click', (e) => {
+    if (e.target.closest('.audio-btn') || e.target.closest('#word-recall-box') || e.target.closest('#btn-just-flip')) return;
+    if (!isFlipped) doFlip();
+  });
+
+  // Check if typed answer matches reference translation
+  const checkAnswerMatch = (typed) => {
+    const cleanTyped = normalizeWord(typed);
+    if (!cleanTyped) return false;
+
+    // Check against full back and comma/semicolon/slash separated translation options
+    const cleanBack = normalizeWord(card.back);
+    if (cleanBack === cleanTyped) return true;
+
+    // Split translation choices by delimiters
+    const options = card.back.split(/[,;\/]+/).map(s => normalizeWord(s)).filter(Boolean);
+    if (options.some(opt => opt === cleanTyped || opt.includes(cleanTyped))) return true;
+
+    // Fuzzy token check
+    const backTokens = cleanBack.split(/\s+/).filter(Boolean);
+    return hasFuzzyMatch(cleanTyped, backTokens, card.back);
+  };
+
+  // Option 2: Active Recall Typing Submit with 3-Attempt Rule
+  const handleRecallSubmit = () => {
+    if (isFlipped) return;
+    const typed = recallInput ? recallInput.value.trim() : '';
+    if (!typed) {
+      if (recallInput) recallInput.focus();
+      return;
+    }
+
+    const isMatch = checkAnswerMatch(typed);
+
+    if (isMatch) {
+      // SUCCESS! Card Passed!
+      isFlipped = true;
+      flashcardEl.classList.add('flipped');
+
+      if (feedbackBanner) {
+        feedbackBanner.classList.remove('hidden');
+        feedbackBanner.className = 'recall-feedback-banner match-good';
+        feedbackBanner.textContent = attemptsRemaining === 3 
+          ? t('correctAttempt1')
+          : (attemptsRemaining === 2 ? t('correctAttempt2') : t('correctAttempt3'));
+      }
+
+      // Reveal ratings toolbar
+      ratingsBar.classList.remove('hidden');
+
+      // Auto-pass with rating 3 (Good) or 4 (Easy)
+      const passedRating = attemptsRemaining === 3 ? RATING.EASY : (attemptsRemaining === 2 ? RATING.GOOD : RATING.HARD);
+      if (callbacks.onPass) {
+        callbacks.onPass(passedRating);
+      }
+    } else {
+      // INCORRECT ATTEMPT
+      attemptsRemaining--;
+
+      if (attemptsRemaining > 0) {
+        // Trigger error shake animation
+        if (recallInput) {
+          recallInput.classList.remove('shake');
+          void recallInput.offsetWidth; // re-flow
+          recallInput.classList.add('shake');
+          recallInput.value = '';
+          recallInput.focus();
+        }
+
+        if (attemptBadge) {
+          attemptBadge.textContent = t('attemptsRemaining', { n: attemptsRemaining });
+          attemptBadge.className = attemptsRemaining === 1 ? 'attempt-badge danger' : 'attempt-badge warning';
+        }
+
+        if (attemptFeedback) {
+          attemptFeedback.classList.remove('hidden');
+          attemptFeedback.className = 'attempt-feedback-box error';
+          attemptFeedback.textContent = t('incorrectAttempt', { n: attemptsRemaining });
+        }
+      } else {
+        // 3 ATTEMPTS EXHAUSTED: Reveal correct answer & mark failed (re-queue)
+        isFlipped = true;
+        flashcardEl.classList.add('flipped');
+
+        if (attemptBadge) {
+          attemptBadge.textContent = '0 left';
+          attemptBadge.className = 'attempt-badge danger';
+        }
+
+        if (feedbackBanner) {
+          feedbackBanner.classList.remove('hidden');
+          feedbackBanner.className = 'recall-feedback-banner match-divergent';
+          feedbackBanner.textContent = t('attemptsExhausted');
+        }
+
+        // Show re-queue continue button
+        requeueBar.classList.remove('hidden');
+
+        // Execute fail callback to re-queue the card
+        if (callbacks.onFail) {
+          callbacks.onFail();
+        }
+
+        const btnRequeueContinue = document.getElementById('btn-requeue-continue');
+        if (btnRequeueContinue) {
+          btnRequeueContinue.focus();
+          btnRequeueContinue.addEventListener('click', () => {
+            if (callbacks.onNext) callbacks.onNext();
+          });
+        }
+      }
+    }
+  };
+
+  if (recallCheckBtn) recallCheckBtn.addEventListener('click', handleRecallSubmit);
+  if (recallInput) {
+    recallInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleRecallSubmit();
+      }
+    });
+  }
+
+  // Rating buttons listeners (for Option 1 or grade override)
   ratingsBar.querySelectorAll('.rating-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const rating = parseInt(btn.getAttribute('data-rating'), 10);
-      if (callbacks.onRate) callbacks.onRate(rating);
+      if (rating === RATING.AGAIN) {
+        if (callbacks.onFail) callbacks.onFail();
+        if (callbacks.onNext) callbacks.onNext();
+      } else {
+        if (callbacks.onPass) callbacks.onPass(rating);
+      }
     });
   });
 
   return {
-    flip: () => { if (!isFlipped) doFlip(); },
+    flip: doFlip,
     speak: () => playAudio(frontAudioBtn),
     isFlipped: () => isFlipped
   };
@@ -350,30 +667,52 @@ export function renderWordStudyCard(card, index, total, callbacks = {}) {
 
 /**
  * Renders the Study screen for Definition Practice Mode
+ * Features:
+ *  1. Textarea active definition typing with 3 attempts & fuzzy semantic matching
+ *  2. "Just Flip Card" option
+ *  3. Visual similarity score, missing key concept hints, and side-by-side highlighted diff
  */
-export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
+export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) {
   const container = document.getElementById('study-active-area');
   if (!container) return;
 
-  const currentNum = index + 1;
-  const progressPct = Math.round((currentNum / total) * 100);
+  const {
+    currentNumber = 1,
+    remainingInSession = 1,
+    totalInitial = 1,
+    isRequeued = false
+  } = queueInfo;
+
+  const progressPct = Math.round((Math.max(0, totalInitial - remainingInSession + 1) / totalInitial) * 100);
 
   // Update header progress
   const counterEl = document.getElementById('study-progress-counter');
+  const remainingEl = document.getElementById('study-queue-remaining');
   const progBarEl = document.getElementById('study-progress-bar');
   const modeInd = document.getElementById('study-mode-indicator');
 
-  if (counterEl) counterEl.textContent = t('cardOf', { current: currentNum, total });
+  if (counterEl) counterEl.textContent = t('cardOf', { current: currentNumber, total: totalInitial });
+  if (remainingEl) {
+    remainingEl.textContent = isRequeued 
+      ? `⚡ ${t('cardRequeued')}`
+      : `${remainingInSession} ${t('headerDue').toLowerCase()}`;
+    remainingEl.className = isRequeued ? 'badge badge-learning' : 'badge badge-new';
+  }
   if (progBarEl) progBarEl.style.width = `${progressPct}%`;
   if (modeInd) modeInd.textContent = `${t('modeDefinitions')} • ${card.sourceLang.toUpperCase()}`;
 
   const langCode = card.sourceLang || 'en';
+  let attemptsRemaining = 3;
+  let evaluated = false;
 
   container.innerHTML = `
     <div class="definition-card">
       <div class="definition-header">
         <span class="card-lang-tag">${langCode.toUpperCase()} ${t('defPracticeHeader')}</span>
-        <button type="button" class="audio-btn" id="def-audio-btn" title="${t('pronounceWord')}">🔊</button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="attempt-badge" id="def-attempt-badge">${t('attemptsRemaining', { n: 3 })}</span>
+          <button type="button" class="audio-btn" id="def-audio-btn" title="${t('pronounceWord')}">🔊</button>
+        </div>
       </div>
 
       <div class="definition-prompt-box">
@@ -388,7 +727,12 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
       <!-- User Active Typing Area -->
       <div class="definition-input-area" id="def-input-area">
         <textarea id="def-user-input" class="definition-textarea" placeholder="${t('typeYourDefinition')}" autofocus></textarea>
-        <div class="definition-submit-bar">
+        <div class="definition-submit-bar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-def-flip">
+            <span>🔄</span>
+            <span>${t('optionJustFlip')} (Space)</span>
+          </button>
+
           <button type="button" class="btn btn-primary" id="def-submit-btn">
             <span>✓</span>
             <span>${t('submitAnswer')} (Enter)</span>
@@ -396,14 +740,17 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
         </div>
       </div>
 
+      <!-- Attempt Hint Banner -->
+      <div id="def-attempt-hint" class="attempt-feedback-box hidden" style="margin-top: 10px;"></div>
+
       <!-- Fuzzy Evaluation Results Box -->
       <div id="def-eval-container" class="hidden"></div>
 
-      <!-- Ratings Toolbar -->
+      <!-- SRS Ratings Toolbar -->
       <div class="srs-ratings-bar hidden" id="def-ratings-bar">
         <button type="button" class="rating-btn again" data-rating="1">
-          <span class="rating-label">${t('ratingAgain')}</span>
-          <span class="rating-hint">1d</span>
+          <span class="rating-label">${t('failCardBtn')}</span>
+          <span class="rating-hint">${t('cardRequeued')}</span>
           <span class="rating-key-badge">1</span>
         </button>
         <button type="button" class="rating-btn hard" data-rating="2">
@@ -412,8 +759,8 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
           <span class="rating-key-badge">2</span>
         </button>
         <button type="button" class="rating-btn good" data-rating="3">
-          <span class="rating-label">${t('ratingGood')}</span>
-          <span class="rating-hint">${t('ratingGood')}</span>
+          <span class="rating-label">${t('passCardBtn')}</span>
+          <span class="rating-hint">${t('cardPassed')}</span>
           <span class="rating-key-badge">3</span>
         </button>
         <button type="button" class="rating-btn easy" data-rating="4">
@@ -422,16 +769,26 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
           <span class="rating-key-badge">4</span>
         </button>
       </div>
+
+      <!-- Re-queue continue bar -->
+      <div id="def-requeue-bar" class="hidden" style="margin-top: 14px; text-align: center;">
+        <button type="button" class="btn btn-danger btn-lg" id="btn-def-requeue-continue" style="width: 100%;">
+          <span>🔄</span>
+          <span>${t('continueRequeued')} (Enter)</span>
+        </button>
+      </div>
     </div>
   `;
 
   const audioBtn = document.getElementById('def-audio-btn');
   const userInput = document.getElementById('def-user-input');
   const submitBtn = document.getElementById('def-submit-btn');
+  const btnDefFlip = document.getElementById('btn-def-flip');
   const evalContainer = document.getElementById('def-eval-container');
   const ratingsBar = document.getElementById('def-ratings-bar');
-
-  let evaluated = false;
+  const requeueBar = document.getElementById('def-requeue-bar');
+  const attemptBadge = document.getElementById('def-attempt-badge');
+  const attemptHint = document.getElementById('def-attempt-hint');
 
   const playAudio = async () => {
     audioBtn.classList.add('speaking');
@@ -441,25 +798,25 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
 
   if (audioBtn) audioBtn.addEventListener('click', playAudio);
 
-  // Evaluation Handler
-  const doEvaluate = () => {
+  // "Just Flip" definition action
+  const handleJustFlip = () => {
     if (evaluated) return;
-    const userText = userInput.value.trim();
-    if (!userText) {
-      userInput.focus();
-      return;
-    }
-
     evaluated = true;
     userInput.disabled = true;
     submitBtn.classList.add('hidden');
+    btnDefFlip.classList.add('hidden');
 
-    // Run Fuzzy Semantic Similarity Algorithm
-    const evalResult = evaluateDefinition(userText, card.back, card.keyConcepts, langCode);
-
-    // Render Side-by-side Diff & Metrics
-    evalContainer.classList.remove('hidden');
+    // Run evaluation against empty string to show full reference diff
+    const evalResult = evaluateDefinition('', card.back, card.keyConcepts, langCode);
+    renderEvaluationResults(evalResult, false);
     ratingsBar.classList.remove('hidden');
+  };
+
+  if (btnDefFlip) btnDefFlip.addEventListener('click', handleJustFlip);
+
+  // Renders the diff and results
+  const renderEvaluationResults = (evalResult, isPassed = false) => {
+    evalContainer.classList.remove('hidden');
 
     const tierClass = `score-${evalResult.tier}`;
     const tierLabel = evalResult.tier === 'accurate' 
@@ -523,17 +880,94 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
     if (acceptBtn) {
       acceptBtn.focus();
       acceptBtn.addEventListener('click', () => {
-        if (callbacks.onRate) callbacks.onRate(evalResult.suggestedRating);
+        if (evalResult.suggestedRating === RATING.AGAIN) {
+          if (callbacks.onFail) callbacks.onFail();
+          if (callbacks.onNext) callbacks.onNext();
+        } else {
+          if (callbacks.onPass) callbacks.onPass(evalResult.suggestedRating);
+        }
       });
     }
+  };
 
-    // Manual override listeners
-    ratingsBar.querySelectorAll('.rating-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const rating = parseInt(btn.getAttribute('data-rating'), 10);
-        if (callbacks.onRate) callbacks.onRate(rating);
-      });
-    });
+  // 3-Attempt Fuzzy Evaluation Handler
+  const doEvaluate = () => {
+    if (evaluated) return;
+    const userText = userInput.value.trim();
+    if (!userText) {
+      userInput.focus();
+      return;
+    }
+
+    const evalResult = evaluateDefinition(userText, card.back, card.keyConcepts, langCode);
+
+    if (evalResult.scorePercent >= 75) {
+      // ACCURATE MATCH (≥75%): Pass!
+      evaluated = true;
+      userInput.disabled = true;
+      submitBtn.classList.add('hidden');
+      btnDefFlip.classList.add('hidden');
+
+      renderEvaluationResults(evalResult, true);
+      ratingsBar.classList.remove('hidden');
+
+      if (callbacks.onPass) {
+        callbacks.onPass(evalResult.suggestedRating);
+      }
+    } else {
+      // PARTIAL OR DIVERGENT MATCH (<75%)
+      attemptsRemaining--;
+
+      if (attemptsRemaining > 0) {
+        // Allow retry
+        if (attemptBadge) {
+          attemptBadge.textContent = t('attemptsRemaining', { n: attemptsRemaining });
+          attemptBadge.className = attemptsRemaining === 1 ? 'attempt-badge danger' : 'attempt-badge warning';
+        }
+
+        const missingConcepts = evalResult.conceptMatches.filter(c => !c.matched).length;
+        if (attemptHint) {
+          attemptHint.classList.remove('hidden');
+          attemptHint.className = 'attempt-feedback-box error';
+          attemptHint.textContent = `${evalResult.scorePercent}% Match — ${t('conceptsMissingHint', { n: missingConcepts, attempts: attemptsRemaining })}`;
+        }
+
+        // Focus user input for next attempt
+        userInput.focus();
+      } else {
+        // 3 ATTEMPTS EXHAUSTED: Reveal full diff and mark failed (re-queue)
+        evaluated = true;
+        userInput.disabled = true;
+        submitBtn.classList.add('hidden');
+        btnDefFlip.classList.add('hidden');
+
+        if (attemptBadge) {
+          attemptBadge.textContent = '0 left';
+          attemptBadge.className = 'attempt-badge danger';
+        }
+
+        if (attemptHint) {
+          attemptHint.classList.remove('hidden');
+          attemptHint.className = 'attempt-feedback-box error';
+          attemptHint.textContent = t('attemptsExhausted');
+        }
+
+        renderEvaluationResults(evalResult, false);
+        requeueBar.classList.remove('hidden');
+
+        if (callbacks.onFail) {
+          callbacks.onFail();
+        }
+
+        const btnRequeue = document.getElementById('btn-def-requeue-continue');
+        if (btnRequeue) {
+          btnRequeue.focus();
+          btnRequeue.addEventListener('click', () => {
+            if (callbacks.onNext) callbacks.onNext();
+          });
+        }
+      }
+    }
   };
 
   submitBtn.addEventListener('click', doEvaluate);
@@ -544,28 +978,60 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
     }
   });
 
+  // Rating buttons listeners for manual override
+  ratingsBar.querySelectorAll('.rating-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const rating = parseInt(btn.getAttribute('data-rating'), 10);
+      if (rating === RATING.AGAIN) {
+        if (callbacks.onFail) callbacks.onFail();
+        if (callbacks.onNext) callbacks.onNext();
+      } else {
+        if (callbacks.onPass) callbacks.onPass(rating);
+      }
+    });
+  });
+
   return {
     evaluate: doEvaluate,
+    flip: handleJustFlip,
     speak: playAudio,
     isEvaluated: () => evaluated
   };
 }
 
 /**
- * Renders the session completed congratulatory card
+ * Renders the session completed congratulatory card with mastery stats
  */
-export function renderSessionCompleted(sessionCount, onReturn) {
+export function renderSessionCompleted(sessionStats = {}, onReturn) {
   const container = document.getElementById('study-active-area');
   if (!container) return;
+
+  const {
+    totalMastered = 0,
+    firstPassCount = 0,
+    requeuedCount = 0
+  } = sessionStats;
 
   container.innerHTML = `
     <div class="session-completed-card">
       <div class="completed-icon">⚡</div>
       <h2 style="font-size: 1.6rem; font-weight: 700;">${t('congratsTitle')}</h2>
       <p style="color: var(--text-secondary); max-width: 440px; margin-top: 8px;">
-        ${t('congratsMsg', { count: sessionCount })}
+        ${t('congratsMsg', { count: totalMastered })}
       </p>
-      <button type="button" class="btn btn-primary btn-lg" id="btn-session-return" style="margin-top: 16px;">
+
+      <div style="display: flex; gap: 16px; margin-top: 14px; flex-wrap: wrap; justify-content: center;">
+        <span class="badge badge-mastered" style="padding: 6px 14px; font-size: 0.85rem;">
+          ${t('firstPassCount', { count: firstPassCount })}
+        </span>
+        ${requeuedCount > 0 ? `
+          <span class="badge badge-learning" style="padding: 6px 14px; font-size: 0.85rem;">
+            ${t('requeuedSessionStats', { count: requeuedCount })}
+          </span>
+        ` : ''}
+      </div>
+
+      <button type="button" class="btn btn-primary btn-lg" id="btn-session-return" style="margin-top: 20px;">
         <span>←</span>
         <span>${t('backToDashboard')}</span>
       </button>
@@ -577,16 +1043,19 @@ export function renderSessionCompleted(sessionCount, onReturn) {
 }
 
 /**
- * Renders the library table of all cards
+ * Renders the library table of all cards with folder badges & move action
  */
-export function renderLibraryTable(cards, callbacks = {}) {
+export function renderLibraryTable(cards, folders = [], callbacks = {}) {
   const tbody = document.getElementById('library-table-body');
   if (!tbody) return;
+
+  const folderMap = new Map();
+  folders.forEach(f => folderMap.set(f.id, f));
 
   if (cards.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="8" style="text-align: center; padding: 36px; color: var(--text-muted);">
+        <td colspan="9" style="text-align: center; padding: 36px; color: var(--text-muted);">
           ${t('noCardsFound')}
         </td>
       </tr>
@@ -598,11 +1067,18 @@ export function renderLibraryTable(cards, callbacks = {}) {
     const dueDate = new Date(card.nextReviewDate);
     const isDue = dueDate <= new Date();
     const dueFormatted = dueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const folder = folderMap.get(card.folderId);
+    const folderName = folder ? folder.name : 'General';
 
     return `
       <tr data-card-id="${card.id}">
         <td class="cell-term">${escapeHtml(card.front)}</td>
         <td class="cell-translation" title="${escapeHtml(card.back)}">${escapeHtml(card.back)}</td>
+        <td>
+          <span class="badge" style="background: var(--bg-tertiary); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(folderName)}">
+            📁 ${escapeHtml(folderName)}
+          </span>
+        </td>
         <td><span class="badge" style="background: var(--bg-tertiary);">${card.sourceLang.toUpperCase()} → ${card.targetLang.toUpperCase()}</span></td>
         <td><span class="badge ${card.mode === 'word' ? 'badge-new' : 'badge-review'}">${card.mode}</span></td>
         <td><span class="badge badge-${card.status}">${t(`status${capitalize(card.status)}`)}</span></td>
@@ -612,6 +1088,7 @@ export function renderLibraryTable(cards, callbacks = {}) {
         </td>
         <td class="cell-actions">
           <button type="button" class="btn btn-secondary btn-sm action-edit" title="${t('editCard')}">✏️</button>
+          <button type="button" class="btn btn-secondary btn-sm action-move" title="${t('moveToFolder')}">📁</button>
           <button type="button" class="btn btn-secondary btn-sm action-reset" title="${t('resetSRS')}">🔄</button>
           <button type="button" class="btn btn-secondary btn-sm action-delete" style="color: var(--color-danger);" title="${t('deleteCard')}">🗑️</button>
         </td>
@@ -624,6 +1101,13 @@ export function renderLibraryTable(cards, callbacks = {}) {
     btn.addEventListener('click', () => {
       const cardId = btn.closest('tr').getAttribute('data-card-id');
       if (callbacks.onEdit) callbacks.onEdit(cardId);
+    });
+  });
+
+  tbody.querySelectorAll('.action-move').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cardId = btn.closest('tr').getAttribute('data-card-id');
+      if (callbacks.onMove) callbacks.onMove(cardId);
     });
   });
 
@@ -648,7 +1132,6 @@ export function renderLibraryTable(cards, callbacks = {}) {
 export function renderAnalytics(cards, logs) {
   const stats = computeStats(cards, logs);
 
-  // Breakdown bars
   const distEl = document.getElementById('stats-distribution-breakdown');
   if (distEl) {
     const total = stats.totalCards || 1;
@@ -679,7 +1162,6 @@ export function renderAnalytics(cards, logs) {
     `;
   }
 
-  // Forecast Bar Chart
   const forecastEl = document.getElementById('stats-forecast-chart');
   if (forecastEl) {
     const maxVal = Math.max(1, ...stats.forecast.map(f => f.count));

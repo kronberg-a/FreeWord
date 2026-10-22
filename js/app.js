@@ -1,11 +1,14 @@
 /**
  * FreeWord - Application Orchestrator & State Controller
+ * Manages Folder Hub, Session Launcher, Spaced Repetition Queue,
+ * Active 3-Attempt Mastery Loops, and Keyboard-First Ergonomics.
  */
 
-import { getCurrentLanguage, setLanguage, onLanguageChange, t, SUPPORTED_LANGUAGES } from './i18n.js';
+import { getCurrentLanguage, setLanguage, onLanguageChange, t } from './i18n.js';
 import { processReview, buildStudyQueue, STATUS, RATING } from './srs.js';
 import { 
-  initStorage, getCards, saveCards, addCard, updateCard, deleteCard, resetCardSRS,
+  initStorage, getFolders, saveFolders, addFolder, updateFolder, deleteFolder, getFolderById,
+  getCards, saveCards, addCard, updateCard, deleteCard, moveCardToFolder, resetCardSRS,
   getReviewLogs, addReviewLog, getSettings, updateSettings, exportAllData, importAllData, resetToSeedData
 } from './storage.js';
 import { translateText, checkDuplicate, debounce } from './translator.js';
@@ -17,14 +20,23 @@ import {
 // Application State
 const state = {
   currentView: 'dashboard', // 'dashboard' | 'study' | 'library' | 'stats' | 'settings'
-  activeMode: 'word',        // 'word' | 'definition'
+  activeMode: 'all',        // 'all' | 'word' | 'definition'
   selectedPair: 'all',      // 'all' or 'en-es', 'de-ru', etc.
+  sessionType: 'mixed',     // 'learning' | 'reviewing' | 'mixed'
+  selectedFolderIds: [],    // Pre-session selected folder IDs
   theme: 'dark',
-  studyQueue: [],
-  studyIndex: 0,
-  studySessionCount: 0,
-  studyController: null,
-  editingCardId: null
+  // Active Study Session State
+  studySession: {
+    activeQueue: [],
+    totalInitial: 0,
+    completedCards: new Set(),
+    requeuedCards: new Set(),
+    firstPassCount: 0,
+    studyController: null
+  },
+  editingCardId: null,
+  editingFolderId: null,
+  movingCardId: null
 };
 
 /**
@@ -34,14 +46,22 @@ function initApp() {
   initStorage();
 
   const settings = getSettings();
-  state.activeMode = settings.activeMode || 'word';
+  state.activeMode = settings.activeMode || 'all';
   state.selectedPair = settings.selectedLanguagePair || 'all';
   state.theme = settings.theme || 'dark';
+
+  // Ensure default selected folders
+  const folders = getFolders();
+  if (Array.isArray(settings.selectedFolderIds) && settings.selectedFolderIds.length > 0) {
+    state.selectedFolderIds = settings.selectedFolderIds.filter(id => folders.some(f => f.id === id));
+  } else {
+    state.selectedFolderIds = folders.map(f => f.id);
+  }
 
   // Apply Theme
   applyTheme(state.theme);
 
-  // Setup UI Language
+  // Setup UI Language Selector
   const langSelect = document.getElementById('ui-lang-select');
   if (langSelect) {
     langSelect.value = getCurrentLanguage();
@@ -50,13 +70,13 @@ function initApp() {
     });
   }
 
-  // Subscribe to language change
+  // Subscribe to language changes
   onLanguageChange(() => {
     applyI18n();
     refreshCurrentView();
   });
 
-  // Setup Navigation Tabs & Brand
+  // Setup Navigation Tabs & Brand Link
   document.querySelectorAll('.nav-tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const targetView = btn.getAttribute('data-view');
@@ -69,10 +89,10 @@ function initApp() {
     brandLink.addEventListener('click', () => switchView('dashboard'));
   }
 
-  // Setup Study Mode Switcher in Header
+  // Setup Global Study Mode Switcher in Header (All | Words | Definitions)
   setupModeSwitcher();
 
-  // Setup Theme Toggle
+  // Setup Theme Toggle Button
   const themeBtn = document.getElementById('theme-toggle-btn');
   if (themeBtn) {
     themeBtn.addEventListener('click', toggleTheme);
@@ -89,7 +109,9 @@ function initApp() {
   setupStudyListeners();
   setupLibraryListeners();
   setupSettingsListeners();
-  setupModalListeners();
+  setupCardModalListeners();
+  setupFolderModalListeners();
+  setupMoveModalListeners();
   setupGlobalKeyboardShortcuts();
 
   // Initial render
@@ -116,32 +138,38 @@ function toggleTheme() {
 }
 
 /**
- * Mode Switcher: Words vs Definitions
+ * Global Mode Switcher: All vs Words vs Definitions
  */
 function setupModeSwitcher() {
+  const allBtn = document.getElementById('mode-all-btn');
   const wordsBtn = document.getElementById('mode-words-btn');
   const defsBtn = document.getElementById('mode-defs-btn');
 
   const updateModeButtons = (mode) => {
-    wordsBtn.classList.toggle('active', mode === 'word');
-    wordsBtn.setAttribute('aria-selected', mode === 'word');
-    defsBtn.classList.toggle('active', mode === 'definition');
-    defsBtn.setAttribute('aria-selected', mode === 'definition');
+    if (allBtn) {
+      allBtn.classList.toggle('active', mode === 'all');
+      allBtn.setAttribute('aria-selected', String(mode === 'all'));
+    }
+    if (wordsBtn) {
+      wordsBtn.classList.toggle('active', mode === 'word');
+      wordsBtn.setAttribute('aria-selected', String(mode === 'word'));
+    }
+    if (defsBtn) {
+      defsBtn.classList.toggle('active', mode === 'definition');
+      defsBtn.setAttribute('aria-selected', String(mode === 'definition'));
+    }
   };
 
-  wordsBtn.addEventListener('click', () => {
-    state.activeMode = 'word';
-    updateSettings({ activeMode: 'word' });
-    updateModeButtons('word');
+  const handleModeChange = (mode) => {
+    state.activeMode = mode;
+    updateSettings({ activeMode: mode });
+    updateModeButtons(mode);
     refreshCurrentView();
-  });
+  };
 
-  defsBtn.addEventListener('click', () => {
-    state.activeMode = 'definition';
-    updateSettings({ activeMode: 'definition' });
-    updateModeButtons('definition');
-    refreshCurrentView();
-  });
+  if (allBtn) allBtn.addEventListener('click', () => handleModeChange('all'));
+  if (wordsBtn) wordsBtn.addEventListener('click', () => handleModeChange('word'));
+  if (defsBtn) defsBtn.addEventListener('click', () => handleModeChange('definition'));
 
   updateModeButtons(state.activeMode);
 }
@@ -175,16 +203,57 @@ function switchView(viewName) {
  */
 function refreshCurrentView() {
   const cards = getCards();
+  const folders = getFolders();
   const logs = getReviewLogs();
+  const settings = getSettings();
 
-  updateHeaderStats(cards, logs, state.activeMode, state.selectedPair);
+  updateHeaderStats(cards, logs, state.activeMode, state.selectedPair, settings);
 
   switch (state.currentView) {
     case 'dashboard':
-      renderDashboard(cards, logs, state.activeMode, state.selectedPair, (newPair) => {
-        state.selectedPair = newPair;
-        updateSettings({ selectedLanguagePair: newPair });
-        refreshCurrentView();
+      renderDashboard(cards, folders, logs, {
+        activeMode: state.activeMode,
+        selectedPair: state.selectedPair,
+        sessionType: state.sessionType,
+        selectedFolderIds: state.selectedFolderIds
+      }, {
+        onPairChange: (newPair) => {
+          state.selectedPair = newPair;
+          updateSettings({ selectedLanguagePair: newPair });
+          refreshCurrentView();
+        },
+        onToggleFolder: (folderId, isSelected) => {
+          const set = new Set(state.selectedFolderIds);
+          if (isSelected) set.add(folderId);
+          else set.delete(folderId);
+          state.selectedFolderIds = Array.from(set);
+          updateSettings({ selectedFolderIds: state.selectedFolderIds });
+          refreshCurrentView();
+        },
+        onBrowseFolder: (folderId) => {
+          switchView('library');
+          const folderSelect = document.getElementById('filter-folder-select');
+          if (folderSelect) {
+            folderSelect.value = folderId;
+            applyLibraryFilters();
+          }
+        },
+        onAddCardToFolder: (folderId) => {
+          openCardModal(null, 'word', folderId);
+        },
+        onEditFolder: (folderId) => {
+          openFolderModal(folderId);
+        },
+        onDeleteFolder: (folderId) => {
+          if (confirm(t('confirmDeleteFolder'))) {
+            deleteFolder(folderId);
+            showToast(t('deleteFolder') + ' ✓');
+            refreshCurrentView();
+          }
+        },
+        onOpenCreateFolder: () => {
+          openFolderModal(null);
+        }
       });
       break;
 
@@ -201,114 +270,173 @@ function refreshCurrentView() {
       break;
 
     case 'study':
-      // Maintained by study flow
+      // Study flow handled by active session
       break;
   }
 }
 
 /**
- * Dashboard Actions
+ * Dashboard & Session Launcher Listeners
  */
 function setupDashboardListeners() {
-  const startBtn = document.getElementById('btn-start-review');
+  const startBtn = document.getElementById('btn-start-session');
   const addBtn = document.getElementById('btn-open-add-card');
+  const selectAllBtn = document.getElementById('btn-select-all-folders');
+  const deselectAllBtn = document.getElementById('btn-deselect-all-folders');
+  const openCreateFolderBtn = document.getElementById('btn-open-create-folder');
+
+  // Session mode pill clicks (mixed, learning, reviewing)
+  document.querySelectorAll('.session-mode-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      state.sessionType = pill.getAttribute('data-session');
+      refreshCurrentView();
+    });
+  });
 
   if (startBtn) {
     startBtn.addEventListener('click', startStudySession);
   }
 
   if (addBtn) {
-    addBtn.addEventListener('click', () => openCardModal(null, state.activeMode));
+    addBtn.addEventListener('click', () => openCardModal(null, state.activeMode === 'definition' ? 'definition' : 'word'));
+  }
+
+  if (selectAllBtn) {
+    selectAllBtn.addEventListener('click', () => {
+      const folders = getFolders();
+      state.selectedFolderIds = folders.map(f => f.id);
+      updateSettings({ selectedFolderIds: state.selectedFolderIds });
+      refreshCurrentView();
+    });
+  }
+
+  if (deselectAllBtn) {
+    deselectAllBtn.addEventListener('click', () => {
+      state.selectedFolderIds = [];
+      updateSettings({ selectedFolderIds: [] });
+      refreshCurrentView();
+    });
+  }
+
+  if (openCreateFolderBtn) {
+    openCreateFolderBtn.addEventListener('click', () => openFolderModal(null));
   }
 }
 
 /**
- * Starts a new Spaced Repetition Study Session
+ * Starts a new Spaced Repetition Session with the selected folder(s) & session type
  */
 function startStudySession() {
+  if (state.selectedFolderIds.length === 0) {
+    showToast(t('selectFolderWarning'));
+    return;
+  }
+
   const cards = getCards();
+  const folders = getFolders();
   const settings = getSettings();
 
-  // Build review queue for current mode & language pair
-  const queue = buildStudyQueue(cards, {
-    mode: state.activeMode,
+  const dailyNewLimit = settings.dailyNewLimitNoLimit ? Infinity : (parseInt(settings.dailyNewLimit, 10) || 20);
+  const dailyReviewLimit = settings.dailyReviewLimitNoLimit ? Infinity : (parseInt(settings.dailyReviewLimit, 10) || 50);
+
+  // Build session queue
+  const queue = buildStudyQueue(cards, folders, {
+    selectedFolderIds: state.selectedFolderIds,
+    sessionType: state.sessionType,
+    globalMode: state.activeMode,
     pair: state.selectedPair,
-    dailyNewLimit: parseInt(settings.dailyNewLimit, 10) || 20,
-    dailyReviewLimit: parseInt(settings.dailyReviewLimit, 10) || 50
+    dailyNewLimit,
+    dailyReviewLimit
   });
 
   if (queue.length === 0) {
-    // Check if there are cards matching active mode & pair
-    const modeCards = cards.filter(c => {
-      if (c.mode !== state.activeMode) return false;
-      if (state.selectedPair !== 'all') {
-        const pair = `${c.sourceLang}-${c.targetLang}`;
-        if (pair !== state.selectedPair) return false;
-      }
-      return true;
-    });
-
-    if (modeCards.length === 0) {
-      showToast(t('noCardsFound'));
-      openCardModal(null, state.activeMode);
-      return;
-    } else {
-      // Early Practice Ahead: pick up to 10 cards sorted by earliest review date
-      showToast(t('allCaughtUp') + ' (' + t('practiceAheadBtn') + ')');
-      const sortedAhead = [...modeCards].sort((a, b) => new Date(a.nextReviewDate) - new Date(b.nextReviewDate));
-      state.studyQueue = sortedAhead.slice(0, 10);
-    }
-  } else {
-    state.studyQueue = queue;
+    showToast(t('noCardsMatchingSession'));
+    return;
   }
 
-  state.studyIndex = 0;
-  state.studySessionCount = 0;
+  // Initialize active study session state
+  state.studySession.activeQueue = [...queue];
+  state.studySession.totalInitial = queue.length;
+  state.studySession.completedCards = new Set();
+  state.studySession.requeuedCards = new Set();
+  state.studySession.firstPassCount = 0;
+
   switchView('study');
   loadNextStudyCard();
 }
 
 /**
- * Loads and displays the current card in the review queue
+ * Loads and renders the next card in the active session queue
  */
 function loadNextStudyCard() {
-  if (state.studyIndex >= state.studyQueue.length) {
-    // Session completed!
-    renderSessionCompleted(state.studySessionCount, () => {
+  const session = state.studySession;
+
+  if (session.activeQueue.length === 0) {
+    // Session completed! All items mastered!
+    renderSessionCompleted({
+      totalMastered: session.totalInitial,
+      firstPassCount: session.firstPassCount,
+      requeuedCount: session.requeuedCards.size
+    }, () => {
       switchView('dashboard');
     });
     return;
   }
 
-  const card = state.studyQueue[state.studyIndex];
-  const total = state.studyQueue.length;
+  const card = session.activeQueue[0];
+  const isRequeued = session.requeuedCards.has(card.id);
+
+  const queueInfo = {
+    currentNumber: session.completedCards.size + 1,
+    remainingInSession: session.activeQueue.length,
+    totalInitial: session.totalInitial,
+    isRequeued
+  };
 
   const callbacks = {
-    onRate: (rating) => handleCardRating(card, rating)
+    // Called when user passes (correct recall, high fuzzy score, or manual pass)
+    onPass: (rating = RATING.GOOD) => {
+      const { updatedCard, reviewLog } = processReview(card, rating);
+      updateCard(updatedCard);
+      addReviewLog(reviewLog);
+
+      if (!session.requeuedCards.has(card.id)) {
+        session.firstPassCount++;
+      }
+
+      // Remove from session queue
+      session.activeQueue.shift();
+      session.completedCards.add(card.id);
+
+      // Advance
+      setTimeout(() => {
+        loadNextStudyCard();
+      }, 350);
+    },
+
+    // Called when user fails (exhausted 3 attempts, or clicked Again/Fail)
+    onFail: () => {
+      const { updatedCard, reviewLog } = processReview(card, RATING.AGAIN);
+      updateCard(updatedCard);
+      addReviewLog(reviewLog);
+
+      // RE-QUEUE LOOP: Remove from front, push to back of activeQueue
+      const failedCard = session.activeQueue.shift();
+      session.activeQueue.push(failedCard);
+      session.requeuedCards.add(failedCard.id);
+    },
+
+    // Advance to next card
+    onNext: () => {
+      loadNextStudyCard();
+    }
   };
 
   if (card.mode === 'word') {
-    state.studyController = renderWordStudyCard(card, state.studyIndex, total, callbacks);
+    session.studyController = renderWordStudyCard(card, queueInfo, callbacks);
   } else {
-    state.studyController = renderDefinitionStudyCard(card, state.studyIndex, total, callbacks);
+    session.studyController = renderDefinitionStudyCard(card, queueInfo, callbacks);
   }
-}
-
-/**
- * Handles SRS grade submission for the current card
- */
-function handleCardRating(card, rating) {
-  const { updatedCard, reviewLog } = processReview(card, rating);
-
-  // Persist update
-  updateCard(updatedCard);
-  addReviewLog(reviewLog);
-
-  state.studySessionCount++;
-  state.studyIndex++;
-
-  // Advance to next card
-  loadNextStudyCard();
 }
 
 /**
@@ -326,15 +454,25 @@ function setupStudyListeners() {
  */
 function setupGlobalKeyboardShortcuts() {
   window.addEventListener('keydown', (e) => {
-    // Don't trigger study shortcuts when typing in a text field
     const activeEl = document.activeElement;
     const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
 
-    // Escape always closes modal or exits study
+    // Escape closes modals or exits study view
     if (e.key === 'Escape') {
-      const modal = document.getElementById('modal-card-backdrop');
-      if (modal && !modal.classList.contains('hidden')) {
+      const cardModal = document.getElementById('modal-card-backdrop');
+      const folderModal = document.getElementById('modal-folder-backdrop');
+      const moveModal = document.getElementById('modal-move-backdrop');
+
+      if (cardModal && !cardModal.classList.contains('hidden')) {
         closeCardModal();
+        return;
+      }
+      if (folderModal && !folderModal.classList.contains('hidden')) {
+        closeFolderModal();
+        return;
+      }
+      if (moveModal && !moveModal.classList.contains('hidden')) {
+        closeMoveModal();
         return;
       }
       if (state.currentView === 'study') {
@@ -344,35 +482,64 @@ function setupGlobalKeyboardShortcuts() {
     }
 
     if (state.currentView !== 'study') return;
-    if (!state.studyController) return;
+    const session = state.studySession;
+    if (!session || !session.studyController) return;
 
-    // Space: flip card in word mode (only if not typing in recall field)
+    // Space: flip / reveal card (only if not typing)
     if (e.code === 'Space' && !isTyping) {
       e.preventDefault();
-      if (state.studyController.flip) {
-        state.studyController.flip();
+      if (session.studyController.flip) {
+        session.studyController.flip();
       }
       return;
     }
 
-    // Audio shortcut: Key 'S'
+    // Audio pronunciation shortcut: Key 'S'
     if ((e.key === 's' || e.key === 'S') && !isTyping) {
       e.preventDefault();
-      if (state.studyController.speak) {
-        state.studyController.speak();
+      if (session.studyController.speak) {
+        session.studyController.speak();
       }
       return;
     }
 
-    // SRS Ratings: 1, 2, 3, 4
+    // Enter key when failure continue button is visible
+    if (e.key === 'Enter') {
+      const btnRequeue = document.getElementById('btn-requeue-continue') || document.getElementById('btn-def-requeue-continue');
+      if (btnRequeue && !btnRequeue.closest('.hidden')) {
+        e.preventDefault();
+        btnRequeue.click();
+        return;
+      }
+    }
+
+    // SRS Ratings: 1, 2, 3, 4 (only if ratings bar is visible and not typing)
     if (['1', '2', '3', '4'].includes(e.key) && !isTyping) {
       const rating = parseInt(e.key, 10);
       const ratingsBar = document.querySelector('.srs-ratings-bar:not(.hidden)');
       if (ratingsBar) {
         e.preventDefault();
-        const currentCard = state.studyQueue[state.studyIndex];
+        const currentCard = session.activeQueue[0];
         if (currentCard) {
-          handleCardRating(currentCard, rating);
+          if (rating === RATING.AGAIN) {
+            const { updatedCard, reviewLog } = processReview(currentCard, RATING.AGAIN);
+            updateCard(updatedCard);
+            addReviewLog(reviewLog);
+            const failedCard = session.activeQueue.shift();
+            session.activeQueue.push(failedCard);
+            session.requeuedCards.add(failedCard.id);
+            loadNextStudyCard();
+          } else {
+            const { updatedCard, reviewLog } = processReview(currentCard, rating);
+            updateCard(updatedCard);
+            addReviewLog(reviewLog);
+            if (!session.requeuedCards.has(currentCard.id)) {
+              session.firstPassCount++;
+            }
+            session.activeQueue.shift();
+            session.completedCards.add(currentCard.id);
+            loadNextStudyCard();
+          }
         }
       }
     }
@@ -384,32 +551,49 @@ function setupGlobalKeyboardShortcuts() {
  */
 function setupLibraryListeners() {
   const searchInput = document.getElementById('library-search-input');
+  const folderSelect = document.getElementById('filter-folder-select');
   const modeSelect = document.getElementById('filter-mode-select');
   const statusSelect = document.getElementById('filter-status-select');
   const langSelect = document.getElementById('filter-lang-select');
   const addItemBtn = document.getElementById('btn-library-add-item');
 
-  if (searchInput) {
-    searchInput.addEventListener('input', debounce(applyLibraryFilters, 200));
-  }
-
+  if (searchInput) searchInput.addEventListener('input', debounce(applyLibraryFilters, 200));
+  if (folderSelect) folderSelect.addEventListener('change', applyLibraryFilters);
   if (modeSelect) modeSelect.addEventListener('change', applyLibraryFilters);
   if (statusSelect) statusSelect.addEventListener('change', applyLibraryFilters);
   if (langSelect) langSelect.addEventListener('change', applyLibraryFilters);
 
   if (addItemBtn) {
-    addItemBtn.addEventListener('click', () => openCardModal(null, state.activeMode));
+    addItemBtn.addEventListener('click', () => openCardModal(null, state.activeMode === 'definition' ? 'definition' : 'word'));
   }
 }
 
 function applyLibraryFilters() {
   const cards = getCards();
+  const folders = getFolders();
+
+  // Populate folder select filter options
+  const folderSelect = document.getElementById('filter-folder-select');
+  if (folderSelect) {
+    const curVal = folderSelect.value;
+    let opts = `<option value="all">${t('allFolders')}</option>`;
+    folders.forEach(f => {
+      opts += `<option value="${f.id}" ${f.id === curVal ? 'selected' : ''}>📁 ${escapeHtml(f.name)}</option>`;
+    });
+    folderSelect.innerHTML = opts;
+    if (curVal && folders.some(f => f.id === curVal)) {
+      folderSelect.value = curVal;
+    }
+  }
+
   const search = (document.getElementById('library-search-input')?.value || '').trim().toLowerCase();
+  const folderId = folderSelect?.value || 'all';
   const mode = document.getElementById('filter-mode-select')?.value || 'all';
   const status = document.getElementById('filter-status-select')?.value || 'all';
   const lang = document.getElementById('filter-lang-select')?.value || 'all';
 
   const filtered = cards.filter(card => {
+    if (folderId !== 'all' && card.folderId !== folderId) return false;
     if (mode !== 'all' && card.mode !== mode) return false;
     if (status !== 'all' && card.status !== status) return false;
     if (lang !== 'all' && card.sourceLang !== lang && card.targetLang !== lang) return false;
@@ -424,17 +608,20 @@ function applyLibraryFilters() {
     return true;
   });
 
-  renderLibraryTable(filtered, {
+  renderLibraryTable(filtered, folders, {
     onEdit: (cardId) => {
       const card = cards.find(c => c.id === cardId);
       if (card) openCardModal(card);
+    },
+    onMove: (cardId) => {
+      openMoveModal(cardId);
     },
     onReset: (cardId) => {
       if (confirm(t('confirmReset'))) {
         resetCardSRS(cardId);
         showToast(t('resetSRS') + ' ✓');
         applyLibraryFilters();
-        updateHeaderStats(getCards(), getReviewLogs(), state.activeMode, state.selectedPair);
+        updateHeaderStats(getCards(), getReviewLogs(), state.activeMode, state.selectedPair, getSettings());
       }
     },
     onDelete: (cardId) => {
@@ -442,22 +629,23 @@ function applyLibraryFilters() {
         deleteCard(cardId);
         showToast(t('deleteCard') + ' ✓');
         applyLibraryFilters();
-        updateHeaderStats(getCards(), getReviewLogs(), state.activeMode, state.selectedPair);
+        updateHeaderStats(getCards(), getReviewLogs(), state.activeMode, state.selectedPair, getSettings());
       }
     }
   });
 }
 
 /**
- * Add / Edit Modal & Auto-Translator
+ * Add / Edit Card Modal with Strict Folder Type Enforcement
  */
-function setupModalListeners() {
+function setupCardModalListeners() {
   const backdrop = document.getElementById('modal-card-backdrop');
   const closeBtn = document.getElementById('modal-card-close');
   const cancelBtn = document.getElementById('modal-card-cancel');
   const saveBtn = document.getElementById('modal-card-save');
   const tabWord = document.getElementById('modal-tab-word');
   const tabDef = document.getElementById('modal-tab-def');
+  const folderSelect = document.getElementById('card-form-folder');
   const autoTranslateBtn = document.getElementById('btn-auto-translate');
   const translateDefBtn = document.getElementById('btn-translate-def');
   const termInput = document.getElementById('card-form-front');
@@ -469,32 +657,57 @@ function setupModalListeners() {
     if (e.target === backdrop) closeCardModal();
   });
 
-  // Modal mode tabs
-  tabWord.addEventListener('click', () => setModalMode('word'));
-  tabDef.addEventListener('click', () => setModalMode('definition'));
+  tabWord.addEventListener('click', () => {
+    if (!tabWord.disabled) setCardModalMode('word');
+  });
+  tabDef.addEventListener('click', () => {
+    if (!tabDef.disabled) setCardModalMode('definition');
+  });
 
-  // Duplicate detection listener (scoped strictly to current modal mode)
-  const checkDup = debounce(() => {
+  // Folder change: enforces allowed modes based on folderType!
+  folderSelect.addEventListener('change', () => {
+    const selectedFolder = getFolderById(folderSelect.value);
+    if (!selectedFolder) return;
+
+    if (selectedFolder.folderType === 'words') {
+      tabWord.disabled = false;
+      tabDef.disabled = true;
+      tabDef.style.opacity = '0.4';
+      setCardModalMode('word');
+    } else if (selectedFolder.folderType === 'definitions') {
+      tabWord.disabled = true;
+      tabWord.style.opacity = '0.4';
+      tabDef.disabled = false;
+      setCardModalMode('definition');
+    } else {
+      tabWord.disabled = false;
+      tabDef.disabled = false;
+      tabWord.style.opacity = '1';
+      tabDef.style.opacity = '1';
+    }
+
+    checkCardDuplicate();
+  });
+
+  // Duplicate detection scoped to folder and mode
+  const checkCardDuplicate = debounce(() => {
     const term = termInput.value.trim();
     const sourceLang = sourceLangSelect.value;
     const mode = document.getElementById('card-form-mode').value;
+    const folderId = folderSelect.value;
     const cards = getCards();
-    const duplicate = checkDuplicate(cards, term, sourceLang, mode, state.editingCardId);
+    const duplicate = checkDuplicate(cards, term, sourceLang, mode, folderId, state.editingCardId);
     
     const alertEl = document.getElementById('card-duplicate-alert');
     if (alertEl) {
-      if (duplicate) {
-        alertEl.classList.remove('hidden');
-      } else {
-        alertEl.classList.add('hidden');
-      }
+      alertEl.classList.toggle('hidden', !duplicate);
     }
   }, 250);
 
-  termInput.addEventListener('input', checkDup);
-  sourceLangSelect.addEventListener('change', checkDup);
+  termInput.addEventListener('input', checkCardDuplicate);
+  sourceLangSelect.addEventListener('change', checkCardDuplicate);
 
-  // Auto-Translate Term Button
+  // Auto-Translate Term
   autoTranslateBtn.addEventListener('click', async () => {
     const term = termInput.value.trim();
     if (!term) {
@@ -535,7 +748,7 @@ function setupModalListeners() {
     }
   });
 
-  // Auto-Translate Definition Button (Translates the written definition directly)
+  // Auto-Translate Definition
   if (translateDefBtn) {
     translateDefBtn.addEventListener('click', async () => {
       const defField = document.getElementById('card-form-back-def');
@@ -563,11 +776,10 @@ function setupModalListeners() {
     });
   }
 
-  // Save Card
   saveBtn.addEventListener('click', handleSaveCard);
 }
 
-function setModalMode(mode) {
+function setCardModalMode(mode) {
   const formMode = document.getElementById('card-form-mode');
   const tabWord = document.getElementById('modal-tab-word');
   const tabDef = document.getElementById('modal-tab-def');
@@ -588,21 +800,13 @@ function setModalMode(mode) {
     grpDef.classList.remove('hidden');
     grpConcepts.classList.remove('hidden');
   }
-
-  // Re-run duplicate check for the new mode
-  const termInput = document.getElementById('card-form-front');
-  const sourceLangSelect = document.getElementById('card-form-source-lang');
-  const alertEl = document.getElementById('card-duplicate-alert');
-  if (termInput && sourceLangSelect && alertEl) {
-    const duplicate = checkDuplicate(getCards(), termInput.value.trim(), sourceLangSelect.value, mode, state.editingCardId);
-    alertEl.classList.toggle('hidden', !duplicate);
-  }
 }
 
-function openCardModal(card = null, defaultMode = 'word') {
+function openCardModal(card = null, defaultMode = 'word', preselectedFolderId = null) {
   const backdrop = document.getElementById('modal-card-backdrop');
   const modalTitle = document.getElementById('modal-card-title');
   const idInput = document.getElementById('card-form-id');
+  const folderSelect = document.getElementById('card-form-folder');
   const frontInput = document.getElementById('card-form-front');
   const sourceLang = document.getElementById('card-form-source-lang');
   const targetLang = document.getElementById('card-form-target-lang');
@@ -615,11 +819,21 @@ function openCardModal(card = null, defaultMode = 'word') {
   if (alertEl) alertEl.classList.add('hidden');
 
   const settings = getSettings();
+  const folders = getFolders();
+
+  // Populate folder select
+  let folderOpts = '';
+  folders.forEach(f => {
+    const typeLabel = f.folderType === 'words' ? t('folderWords') : (f.folderType === 'definitions' ? t('folderDefinitions') : t('folderMixed'));
+    folderOpts += `<option value="${f.id}">${escapeHtml(f.name)} (${typeLabel})</option>`;
+  });
+  folderSelect.innerHTML = folderOpts;
 
   if (card) {
     state.editingCardId = card.id;
     modalTitle.textContent = t('modalEditTitle');
     idInput.value = card.id;
+    folderSelect.value = card.folderId || (folders[0] ? folders[0].id : '');
     frontInput.value = card.front;
     sourceLang.value = card.sourceLang || settings.defaultSourceLang;
     targetLang.value = card.targetLang || settings.defaultTargetLang;
@@ -627,11 +841,16 @@ function openCardModal(card = null, defaultMode = 'word') {
     backDef.value = card.mode === 'definition' ? card.back : '';
     conceptsInput.value = (card.keyConcepts || []).join(', ');
     contextInput.value = card.contextSentence || '';
-    setModalMode(card.mode);
+    setCardModalMode(card.mode);
   } else {
     state.editingCardId = null;
     modalTitle.textContent = t('modalAddTitle');
     idInput.value = '';
+    
+    // Preselected folder or first folder
+    const targetFid = preselectedFolderId || (folders[0] ? folders[0].id : '');
+    folderSelect.value = targetFid;
+
     frontInput.value = '';
     sourceLang.value = settings.defaultSourceLang || 'en';
     targetLang.value = settings.defaultTargetLang || 'es';
@@ -639,8 +858,19 @@ function openCardModal(card = null, defaultMode = 'word') {
     backDef.value = '';
     conceptsInput.value = '';
     contextInput.value = '';
-    setModalMode(defaultMode);
+
+    // Enforce folder constraints
+    const folder = getFolderById(targetFid);
+    let chosenMode = defaultMode;
+    if (folder) {
+      if (folder.folderType === 'words') chosenMode = 'word';
+      else if (folder.folderType === 'definitions') chosenMode = 'definition';
+    }
+    setCardModalMode(chosenMode);
   }
+
+  // Trigger folder constraints on tabs
+  folderSelect.dispatchEvent(new Event('change'));
 
   backdrop.classList.remove('hidden');
   frontInput.focus();
@@ -655,6 +885,7 @@ function closeCardModal() {
 function handleSaveCard(e) {
   e.preventDefault();
   const id = document.getElementById('card-form-id').value;
+  const folderId = document.getElementById('card-form-folder').value;
   const mode = document.getElementById('card-form-mode').value;
   const front = document.getElementById('card-form-front').value.trim();
   const sourceLang = document.getElementById('card-form-source-lang').value;
@@ -679,6 +910,7 @@ function handleSaveCard(e) {
   }
 
   const cardData = {
+    folderId,
     mode,
     front,
     back,
@@ -701,11 +933,149 @@ function handleSaveCard(e) {
 }
 
 /**
- * Settings Listeners & Data Management
+ * Folder Create / Edit Modal
+ */
+function setupFolderModalListeners() {
+  const backdrop = document.getElementById('modal-folder-backdrop');
+  const closeBtn = document.getElementById('modal-folder-close');
+  const cancelBtn = document.getElementById('modal-folder-cancel');
+  const saveBtn = document.getElementById('modal-folder-save');
+
+  closeBtn.addEventListener('click', closeFolderModal);
+  cancelBtn.addEventListener('click', closeFolderModal);
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) closeFolderModal();
+  });
+
+  saveBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const id = document.getElementById('folder-form-id').value;
+    const name = document.getElementById('folder-form-name').value.trim();
+    const folderType = document.querySelector('input[name="folder-form-type"]:checked')?.value || 'mixed';
+
+    if (!name) {
+      document.getElementById('folder-form-name').focus();
+      return;
+    }
+
+    if (id) {
+      updateFolder({ id, name, folderType });
+      showToast(t('editFolder') + ' ✓');
+    } else {
+      addFolder({ name, folderType });
+      showToast(t('createFolder') + ' ✓');
+    }
+
+    closeFolderModal();
+    refreshCurrentView();
+  });
+}
+
+function openFolderModal(folderId = null) {
+  const backdrop = document.getElementById('modal-folder-backdrop');
+  const title = document.getElementById('modal-folder-title');
+  const idInput = document.getElementById('folder-form-id');
+  const nameInput = document.getElementById('folder-form-name');
+
+  if (folderId) {
+    const folder = getFolderById(folderId);
+    if (!folder) return;
+    state.editingFolderId = folderId;
+    title.textContent = t('editFolder');
+    idInput.value = folder.id;
+    nameInput.value = folder.name;
+
+    const radio = document.querySelector(`input[name="folder-form-type"][value="${folder.folderType}"]`);
+    if (radio) radio.checked = true;
+  } else {
+    state.editingFolderId = null;
+    title.textContent = t('createFolder');
+    idInput.value = '';
+    nameInput.value = '';
+    const radioMixed = document.getElementById('folder-type-mixed');
+    if (radioMixed) radioMixed.checked = true;
+  }
+
+  backdrop.classList.remove('hidden');
+  nameInput.focus();
+}
+
+function closeFolderModal() {
+  const backdrop = document.getElementById('modal-folder-backdrop');
+  backdrop.classList.add('hidden');
+  state.editingFolderId = null;
+}
+
+/**
+ * Move Card Modal
+ */
+function setupMoveModalListeners() {
+  const backdrop = document.getElementById('modal-move-backdrop');
+  const closeBtn = document.getElementById('modal-move-close');
+  const cancelBtn = document.getElementById('modal-move-cancel');
+  const saveBtn = document.getElementById('modal-move-save');
+
+  closeBtn.addEventListener('click', closeMoveModal);
+  cancelBtn.addEventListener('click', closeMoveModal);
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) closeMoveModal();
+  });
+
+  saveBtn.addEventListener('click', () => {
+    const cardId = document.getElementById('move-card-id').value;
+    const targetFolderId = document.getElementById('move-card-folder-select').value;
+
+    const res = moveCardToFolder(cardId, targetFolderId);
+    if (res.success) {
+      showToast(t('moveToFolder') + ' ✓');
+      closeMoveModal();
+      applyLibraryFilters();
+      updateHeaderStats(getCards(), getReviewLogs(), state.activeMode, state.selectedPair, getSettings());
+    } else {
+      showToast(res.error || 'Cannot move card to selected folder');
+    }
+  });
+}
+
+function openMoveModal(cardId) {
+  const backdrop = document.getElementById('modal-move-backdrop');
+  const cards = getCards();
+  const card = cards.find(c => c.id === cardId);
+  if (!card) return;
+
+  document.getElementById('move-card-id').value = cardId;
+  const folderSelect = document.getElementById('move-card-folder-select');
+
+  // Filter compatible folders
+  const folders = getFolders();
+  const compatible = folders.filter(f => {
+    if (card.mode === 'word') return f.folderType === 'words' || f.folderType === 'mixed';
+    if (card.mode === 'definition') return f.folderType === 'definitions' || f.folderType === 'mixed';
+    return true;
+  });
+
+  folderSelect.innerHTML = compatible.map(f => `
+    <option value="${f.id}" ${f.id === card.folderId ? 'selected' : ''}>
+      📁 ${escapeHtml(f.name)} (${f.folderType})
+    </option>
+  `).join('');
+
+  backdrop.classList.remove('hidden');
+}
+
+function closeMoveModal() {
+  const backdrop = document.getElementById('modal-move-backdrop');
+  backdrop.classList.add('hidden');
+}
+
+/**
+ * Settings Listeners & Data Management (with No Limit Toggles)
  */
 function setupSettingsListeners() {
   const dailyNewInput = document.getElementById('setting-daily-new');
+  const dailyNewNoLimit = document.getElementById('setting-daily-new-nolimit');
   const dailyReviewsInput = document.getElementById('setting-daily-reviews');
+  const dailyReviewsNoLimit = document.getElementById('setting-daily-reviews-nolimit');
   const defaultSourceSelect = document.getElementById('setting-default-source');
   const defaultTargetSelect = document.getElementById('setting-default-target');
 
@@ -717,12 +1087,30 @@ function setupSettingsListeners() {
   if (dailyNewInput) {
     dailyNewInput.addEventListener('change', () => {
       updateSettings({ dailyNewLimit: parseInt(dailyNewInput.value, 10) || 20 });
+      refreshCurrentView();
+    });
+  }
+
+  if (dailyNewNoLimit) {
+    dailyNewNoLimit.addEventListener('change', () => {
+      dailyNewInput.disabled = dailyNewNoLimit.checked;
+      updateSettings({ dailyNewLimitNoLimit: dailyNewNoLimit.checked });
+      refreshCurrentView();
     });
   }
 
   if (dailyReviewsInput) {
     dailyReviewsInput.addEventListener('change', () => {
       updateSettings({ dailyReviewLimit: parseInt(dailyReviewsInput.value, 10) || 50 });
+      refreshCurrentView();
+    });
+  }
+
+  if (dailyReviewsNoLimit) {
+    dailyReviewsNoLimit.addEventListener('change', () => {
+      dailyReviewsInput.disabled = dailyReviewsNoLimit.checked;
+      updateSettings({ dailyReviewLimitNoLimit: dailyReviewsNoLimit.checked });
+      refreshCurrentView();
     });
   }
 
@@ -789,12 +1177,28 @@ function setupSettingsListeners() {
 function populateSettingsForm() {
   const settings = getSettings();
   const dailyNewInput = document.getElementById('setting-daily-new');
+  const dailyNewNoLimit = document.getElementById('setting-daily-new-nolimit');
   const dailyReviewsInput = document.getElementById('setting-daily-reviews');
+  const dailyReviewsNoLimit = document.getElementById('setting-daily-reviews-nolimit');
   const defaultSourceSelect = document.getElementById('setting-default-source');
   const defaultTargetSelect = document.getElementById('setting-default-target');
 
-  if (dailyNewInput) dailyNewInput.value = settings.dailyNewLimit || 20;
-  if (dailyReviewsInput) dailyReviewsInput.value = settings.dailyReviewLimit || 50;
+  if (dailyNewInput) {
+    dailyNewInput.value = settings.dailyNewLimit || 20;
+    dailyNewInput.disabled = Boolean(settings.dailyNewLimitNoLimit);
+  }
+  if (dailyNewNoLimit) {
+    dailyNewNoLimit.checked = Boolean(settings.dailyNewLimitNoLimit);
+  }
+
+  if (dailyReviewsInput) {
+    dailyReviewsInput.value = settings.dailyReviewLimit || 50;
+    dailyReviewsInput.disabled = Boolean(settings.dailyReviewLimitNoLimit);
+  }
+  if (dailyReviewsNoLimit) {
+    dailyReviewsNoLimit.checked = Boolean(settings.dailyReviewLimitNoLimit);
+  }
+
   if (defaultSourceSelect) defaultSourceSelect.value = settings.defaultSourceLang || 'en';
   if (defaultTargetSelect) defaultTargetSelect.value = settings.defaultTargetLang || 'es';
 }

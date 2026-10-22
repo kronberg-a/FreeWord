@@ -316,12 +316,13 @@ export async function translateText(text, sourceLang = 'en', targetLang = 'es') 
  * @param {string|null} currentCardId Exclude this card ID when editing
  * @returns {Object|null} Matching duplicate card or null
  */
-export function checkDuplicate(cards, term, sourceLang, mode = 'word', currentCardId = null) {
+export function checkDuplicate(cards, term, sourceLang, mode = 'word', folderId = null, currentCardId = null) {
   if (!term || !cards || cards.length === 0) return null;
   const cleanTerm = cleanKey(term);
 
   const found = cards.find(c => {
     if (currentCardId && c.id === currentCardId) return false;
+    if (folderId && c.folderId !== folderId) return false;
     return c.mode === mode && 
            c.sourceLang === sourceLang && 
            cleanKey(c.front) === cleanTerm;

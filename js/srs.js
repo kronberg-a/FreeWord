@@ -1,5 +1,7 @@
 /**
  * FreeWord - Core Spaced Repetition Engine (SM-2 / Leitner Derivative)
+ * Implements mathematical scheduling, session queue construction across folders,
+ * and comprehensive deck metrics calculation.
  */
 
 export const RATING = {
@@ -16,15 +18,16 @@ export const STATUS = {
   MASTERED: 'mastered'
 };
 
-export const DEFAULT_EASE_FACTOR = 2.5;
-export const MIN_EASE_FACTOR = 1.3;
+export const DEFAULT_EASE_FACTOR = 2.50;
+export const MIN_EASE_FACTOR = 1.30;
 export const MASTERED_INTERVAL_DAYS = 21;
 
 /**
- * Creates a new card object with default SRS state
+ * Creates a new card object with default SRS state & folder link
  */
 export function createCard({
   id = crypto.randomUUID ? crypto.randomUUID() : 'card_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+  folderId = 'folder_default',
   mode = 'word', // 'word' | 'definition'
   front = '',
   back = '',
@@ -42,6 +45,7 @@ export function createCard({
 }) {
   return {
     id,
+    folderId,
     mode,
     front: front.trim(),
     back: back.trim(),
@@ -75,7 +79,7 @@ export function processReview(card, rating) {
   let status = card.status || STATUS.NEW;
 
   switch (rating) {
-    case RATING.AGAIN: // Score 1: Reset
+    case RATING.AGAIN: // Score 1: Reset / Re-queue
       interval = 1;
       repetitions = 0;
       easeFactor = Math.max(MIN_EASE_FACTOR, easeFactor - 0.20);
@@ -101,7 +105,7 @@ export function processReview(card, rating) {
       status = interval >= MASTERED_INTERVAL_DAYS ? STATUS.MASTERED : STATUS.REVIEW;
       break;
 
-    case RATING.EASY: // Score 4: Accelerated
+    case RATING.EASY: // Score 4: Accelerated progression
       if (repetitions === 0) {
         interval = 4;
       } else if (repetitions === 1) {
@@ -135,6 +139,7 @@ export function processReview(card, rating) {
   const reviewLog = {
     id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
     cardId: card.id,
+    folderId: card.folderId,
     mode: card.mode,
     rating,
     timestamp: now.toISOString(),
@@ -147,35 +152,49 @@ export function processReview(card, rating) {
 }
 
 /**
- * Builds the daily review session queue based on limits, mode, and optional language pair
+ * Builds the practice session queue based on selected folders, session type,
+ * global mode filter, language pair, and daily limits.
  */
-export function buildStudyQueue(cards, options = {}) {
+export function buildStudyQueue(cards, folders = [], options = {}) {
   const {
-    mode = null, // 'word' | 'definition' | null (all)
-    pair = 'all', // e.g. 'de-ru' or 'all'
+    selectedFolderIds = [],
+    sessionType = 'mixed', // 'learning' | 'reviewing' | 'mixed'
+    globalMode = 'all',    // 'all' | 'word' | 'definition'
+    pair = 'all',          // 'all' or 'en-es', etc.
     dailyNewLimit = 20,
     dailyReviewLimit = 50
   } = options;
 
   const now = new Date();
 
-  // Filter cards by criteria
-  const matchingCards = cards.filter(card => {
-    if (mode && card.mode !== mode) return false;
-    if (pair && pair !== 'all') {
-      const cardPair = `${card.sourceLang}-${card.targetLang}`;
-      if (cardPair !== pair) return false;
+  // 1. Filter by selected folders
+  let pool = cards.filter(c => {
+    if (selectedFolderIds.length > 0 && !selectedFolderIds.includes(c.folderId)) {
+      return false;
     }
     return true;
   });
 
-  // Separate due reviews from new cards
+  // 2. Filter by global mode
+  if (globalMode !== 'all') {
+    pool = pool.filter(c => c.mode === globalMode);
+  }
+
+  // 3. Filter by language pair
+  if (pair && pair !== 'all') {
+    pool = pool.filter(c => `${c.sourceLang}-${c.targetLang}` === pair);
+  }
+
+  // 4. Categorize by status & due date
   const dueReviews = [];
+  const learningCards = [];
   const newCards = [];
 
-  for (const card of matchingCards) {
+  for (const card of pool) {
     if (card.status === STATUS.NEW) {
       newCards.push(card);
+    } else if (card.status === STATUS.LEARNING) {
+      learningCards.push(card);
     } else {
       const dueDate = new Date(card.nextReviewDate);
       if (dueDate <= now) {
@@ -187,24 +206,52 @@ export function buildStudyQueue(cards, options = {}) {
   // Sort due reviews: most overdue first
   dueReviews.sort((a, b) => new Date(a.nextReviewDate) - new Date(b.nextReviewDate));
 
-  // Cap with daily limits
-  const selectedReviews = dueReviews.slice(0, dailyReviewLimit);
-  const selectedNew = newCards.slice(0, dailyNewLimit);
+  // Cap according to limits (handling Infinity or numeric limit)
+  const maxNew = dailyNewLimit === Infinity ? newCards.length : Math.max(0, dailyNewLimit);
+  const maxReviews = dailyReviewLimit === Infinity ? dueReviews.length : Math.max(0, dailyReviewLimit);
 
-  // Return queue: due reviews first, then new material
-  return [...selectedReviews, ...selectedNew];
+  // 5. Build queue according to Session Type
+  switch (sessionType) {
+    case 'learning':
+      // Learning Only: Pulls only "new" and currently "learning" cards
+      return [
+        ...learningCards,
+        ...newCards.slice(0, maxNew)
+      ];
+
+    case 'reviewing':
+      // Reviewing Only: Pulls only due cards
+      return dueReviews.slice(0, maxReviews);
+
+    case 'mixed':
+    default:
+      // Mixed Session: Combines both due Review cards and New/Learning cards
+      return [
+        ...dueReviews.slice(0, maxReviews),
+        ...learningCards,
+        ...newCards.slice(0, maxNew)
+      ];
+  }
 }
 
 /**
- * Computes analytics stats for cards and logs filtered by mode and language pair
+ * Computes analytics stats for cards and logs filtered by folders, mode, and pair
  */
 export function computeStats(cards, reviewLogs = [], options = {}) {
-  const { mode = null, pair = 'all' } = options;
+  const { 
+    folderId = null,
+    selectedFolderIds = null,
+    mode = 'all', 
+    pair = 'all' 
+  } = options;
+
   const now = new Date();
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
   const filteredCards = cards.filter(c => {
-    if (mode && c.mode !== mode) return false;
+    if (folderId && c.folderId !== folderId) return false;
+    if (selectedFolderIds && selectedFolderIds.length > 0 && !selectedFolderIds.includes(c.folderId)) return false;
+    if (mode && mode !== 'all' && c.mode !== mode) return false;
     if (pair && pair !== 'all') {
       const cardPair = `${c.sourceLang}-${c.targetLang}`;
       if (cardPair !== pair) return false;
@@ -237,7 +284,7 @@ export function computeStats(cards, reviewLogs = [], options = {}) {
 
   // Calculate retention rate from review logs
   const filteredLogs = reviewLogs.filter(l => {
-    if (mode && l.mode !== mode) return false;
+    if (mode && mode !== 'all' && l.mode !== mode) return false;
     return true;
   });
 
@@ -284,5 +331,31 @@ export function computeStats(cards, reviewLogs = [], options = {}) {
     totalReviews,
     avgEase,
     forecast
+  };
+}
+
+/**
+ * Calculates how many cards user has reviewed and studied new today
+ */
+export function getDailyStudiedCounts(reviewLogs = []) {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).getTime();
+  const todayLogs = reviewLogs.filter(l => new Date(l.timestamp).getTime() >= todayStart);
+
+  let newStudied = 0;
+  let reviewsStudied = 0;
+
+  todayLogs.forEach(l => {
+    if ((l.previousInterval || 0) === 0) {
+      newStudied++;
+    } else {
+      reviewsStudied++;
+    }
+  });
+
+  return {
+    newStudied,
+    reviewsStudied,
+    totalStudiedToday: todayLogs.length
   };
 }

@@ -18,16 +18,19 @@
     <!-- Top Header -->
     <header class="app-header">
       <div class="header-container">
-        <!-- Brand -->
+        <!-- Brand & Global Mode Selector -->
         <div class="header-left">
           <div class="brand" id="brand-link" title="FreeWord Home">
             <div class="brand-icon">⚡</div>
             <span data-i18n="appTitle">FreeWord</span>
           </div>
 
-          <!-- Study Mode Selector -->
-          <div class="mode-toggle-group" role="tablist" aria-label="Study Mode Selection">
-            <button type="button" class="mode-btn active" id="mode-words-btn" role="tab" aria-selected="true" data-mode="word">
+          <!-- Global Study Mode Selector: All | Words | Definitions -->
+          <div class="mode-toggle-group" role="tablist" aria-label="Global Mode Selection">
+            <button type="button" class="mode-btn active" id="mode-all-btn" role="tab" aria-selected="true" data-mode="all">
+              <span data-i18n="modeAll">All</span>
+            </button>
+            <button type="button" class="mode-btn" id="mode-words-btn" role="tab" aria-selected="false" data-mode="word">
               <span data-i18n="modeWords">Words</span>
             </button>
             <button type="button" class="mode-btn" id="mode-defs-btn" role="tab" aria-selected="false" data-mode="definition">
@@ -44,8 +47,15 @@
           <button type="button" class="nav-tab-btn" data-view="settings" data-i18n="navSettings">Settings</button>
         </nav>
 
-        <!-- Header Right: Quick Stats & Controls -->
+        <!-- Header Right: Daily Limits, Quick Stats & Controls -->
         <div class="header-right">
+          <!-- Daily Limits Progress Indicator Pill -->
+          <div class="header-limits-badge" id="header-limits-badge" title="Today's Study Limits & Progress">
+            <span id="header-limits-new">New: 0/20</span>
+            <span class="stat-pill-dot">·</span>
+            <span id="header-limits-rev">Rev: 0/50</span>
+          </div>
+
           <!-- Quick Stats Pill (Due / New / Mastered) -->
           <div class="header-stats-badge" id="header-stats-badge" title="Due / New / Mastered">
             <span class="stat-pill-item"><span class="stat-pill-due" id="header-due-count">0</span> Due</span>
@@ -77,76 +87,149 @@
 
     <!-- Main Container with Dynamic Views -->
     <main class="app-main">
-      <!-- 1. DASHBOARD VIEW -->
+      <!-- 1. DASHBOARD VIEW: SESSION LAUNCHER + FOLDER MANAGER + STATS -->
       <section id="view-dashboard" class="view-section">
-        <div class="dashboard-grid">
-          <!-- Main Deck Action Panel -->
-          <div class="card-panel deck-hero">
-            <div class="deck-hero-content">
-              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span class="badge badge-new" id="dashboard-active-mode-badge">Words Mode</span>
-                </div>
-                <!-- Language Pair Filter -->
-                <div style="display: flex; align-items: center; gap: 6px;">
-                  <select id="dashboard-pair-select" class="dashboard-pair-select" aria-label="Select Study Language Pair">
-                    <option value="all">All Language Pairs</option>
-                  </select>
-                </div>
-              </div>
-
-              <h2 id="dashboard-hero-title" data-i18n="readyToReview">Ready for your spaced review?</h2>
-              <p id="dashboard-hero-subtitle" data-i18n="wordsModeDesc">Flashcard & typing vocabulary drills with spaced repetition intervals.</p>
-              
-              <!-- Progress Bar -->
-              <div class="progress-bar-container" id="dashboard-progress-bar" title="Mastery Distribution">
-                <div class="progress-segment new" style="width: 25%" title="New"></div>
-                <div class="progress-segment learning" style="width: 25%" title="Learning"></div>
-                <div class="progress-segment review" style="width: 25%" title="Review"></div>
-                <div class="progress-segment mastered" style="width: 25%" title="Mastered"></div>
-              </div>
-
-              <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
-                <span id="bar-label-new">New: 0</span>
-                <span id="bar-label-learning">Learning: 0</span>
-                <span id="bar-label-review">Review: 0</span>
-                <span id="bar-label-mastered">Mastered: 0</span>
-              </div>
+        <!-- SESSION LAUNCHER BAR -->
+        <div class="session-launcher-panel" id="session-launcher-panel">
+          <div class="session-launcher-top">
+            <div class="session-launcher-title-group">
+              <h2 data-i18n="sessionLauncherTitle">
+                <span>⚡</span>
+                <span data-i18n="sessionLauncherTitle">Session Launcher</span>
+              </h2>
+              <p id="session-launcher-summary">Select one or more folders below to study.</p>
             </div>
 
-            <div class="deck-hero-actions">
-              <button type="button" class="btn btn-primary btn-lg" id="btn-start-review">
-                <span>⚡</span>
-                <span id="btn-start-review-text" data-i18n="startReviewBtn">Start Review Session</span>
-                <span class="badge" id="btn-due-count-badge" style="background: rgba(255,255,255,0.25); color: #fff;">0</span>
+            <!-- Language Pair Filter -->
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <select id="dashboard-pair-select" class="dashboard-pair-select" aria-label="Select Study Language Pair">
+                <option value="all" data-i18n="filterAllPairs">All Language Pairs</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Session Mode Selector (Learning Only, Reviewing Only, Mixed) -->
+          <div>
+            <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px;" data-i18n="sessionType">
+              Session Mode
+            </div>
+            <div class="session-mode-selector" role="radiogroup" aria-label="Session Mode">
+              <button type="button" class="session-mode-pill active" id="btn-session-mixed" data-session="mixed" role="radio" aria-checked="true">
+                <span class="session-mode-pill-header">
+                  <span>⚡</span>
+                  <span data-i18n="sessionMixed">Mixed Session</span>
+                </span>
+                <span class="session-mode-pill-desc" data-i18n="sessionMixedDesc">Combines both due reviews and new material</span>
               </button>
-              <button type="button" class="btn btn-secondary" id="btn-open-add-card">
-                <span>+</span>
-                <span data-i18n="addNewCardBtn">Add Item</span>
+
+              <button type="button" class="session-mode-pill" id="btn-session-learning" data-session="learning" role="radio" aria-checked="false">
+                <span class="session-mode-pill-header">
+                  <span>🌱</span>
+                  <span data-i18n="sessionLearning">Learning Only</span>
+                </span>
+                <span class="session-mode-pill-desc" data-i18n="sessionLearningDesc">Pulls only new and currently learning cards</span>
+              </button>
+
+              <button type="button" class="session-mode-pill" id="btn-session-reviewing" data-session="reviewing" role="radio" aria-checked="false">
+                <span class="session-mode-pill-header">
+                  <span>🔄</span>
+                  <span data-i18n="sessionReviewing">Reviewing Only</span>
+                </span>
+                <span class="session-mode-pill-desc" data-i18n="sessionReviewingDesc">Pulls only scheduled due cards</span>
               </button>
             </div>
           </div>
 
-          <!-- Quick Stats Overview Box -->
-          <div class="card-panel">
-            <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 12px;" data-i18n="quickStats">Quick Overview</h3>
-            <div class="quick-stats-grid">
-              <div class="stat-box">
-                <span class="stat-box-label" data-i18n="dueToday">Due Today</span>
-                <span class="stat-box-value" id="stat-due-today" style="color: var(--color-danger);">0</span>
-              </div>
-              <div class="stat-box">
-                <span class="stat-box-label" data-i18n="totalCards">Total Cards</span>
-                <span class="stat-box-value" id="stat-total-cards">0</span>
-              </div>
-              <div class="stat-box">
-                <span class="stat-box-label" data-i18n="retentionRate">Retention</span>
-                <span class="stat-box-value" id="stat-retention-rate" style="color: var(--color-success);">100%</span>
-              </div>
-              <div class="stat-box">
-                <span class="stat-box-label" data-i18n="statMastered">Mastered</span>
-                <span class="stat-box-value" id="stat-mastered-cards" style="color: var(--accent-text);">0</span>
-              </div>
+          <!-- Alert banner if 0 folders selected -->
+          <div class="session-alert-banner hidden" id="session-zero-folders-alert">
+            <span>⚠️</span>
+            <span data-i18n="selectFolderWarning">Please select at least one folder below to study.</span>
+          </div>
+
+          <!-- Launcher Action Row -->
+          <div class="session-launcher-actions">
+            <div class="session-summary-text" id="session-cards-ready-text">
+              <span class="badge badge-new" id="session-cards-ready-badge">0 cards ready</span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <button type="button" class="btn btn-secondary" id="btn-open-add-card">
+                <span>+</span>
+                <span data-i18n="addNewCardBtn">Add Item</span>
+              </button>
+              <button type="button" class="btn btn-primary btn-lg" id="btn-start-session">
+                <span>⚡</span>
+                <span id="btn-start-session-text" data-i18n="startSessionBtn">Start Session</span>
+                <span class="badge" id="btn-session-count-badge" style="background: rgba(255,255,255,0.25); color: #fff;">0</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- FOLDERS MANAGER SECTION -->
+        <div class="folders-section">
+          <div class="folders-section-header">
+            <h2>
+              <span>📁</span>
+              <span data-i18n="studyFoldersHeading">Study Folders</span>
+              <span class="badge" id="folders-total-badge" style="background: var(--bg-tertiary); color: var(--text-secondary); font-size: 0.75rem;">0</span>
+            </h2>
+
+            <div class="folders-header-controls">
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-select-all-folders" data-i18n="selectAllFolders">Select All</button>
+              <span style="color: var(--border-color);">|</span>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-deselect-all-folders" data-i18n="deselectAllFolders">Deselect All</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-open-create-folder">
+                <span>+</span>
+                <span data-i18n="newFolderBtn">New Folder</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Grid of Folder Cards -->
+          <div class="folders-grid" id="folder-cards-grid">
+            <!-- Injected dynamically by ui.js -->
+          </div>
+        </div>
+
+        <!-- QUICK OVERVIEW STATS BOX -->
+        <div class="card-panel">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="font-size: 1rem; font-weight: 700;" data-i18n="quickStats">Quick Overview</h3>
+            <span class="badge badge-new" id="dashboard-active-mode-badge">All Cards</span>
+          </div>
+
+          <!-- Progress Bar -->
+          <div class="progress-bar-container" id="dashboard-progress-bar" title="Mastery Distribution">
+            <div class="progress-segment new" style="width: 25%" title="New"></div>
+            <div class="progress-segment learning" style="width: 25%" title="Learning"></div>
+            <div class="progress-segment review" style="width: 25%" title="Review"></div>
+            <div class="progress-segment mastered" style="width: 25%" title="Mastered"></div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 16px;">
+            <span id="bar-label-new">New: 0</span>
+            <span id="bar-label-learning">Learning: 0</span>
+            <span id="bar-label-review">Review: 0</span>
+            <span id="bar-label-mastered">Mastered: 0</span>
+          </div>
+
+          <div class="quick-stats-grid">
+            <div class="stat-box">
+              <span class="stat-box-label" data-i18n="dueToday">Due Today</span>
+              <span class="stat-box-value" id="stat-due-today" style="color: var(--color-danger);">0</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-box-label" data-i18n="totalCards">Total Cards</span>
+              <span class="stat-box-value" id="stat-total-cards">0</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-box-label" data-i18n="retentionRate">Retention</span>
+              <span class="stat-box-value" id="stat-retention-rate" style="color: var(--color-success);">100%</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-box-label" data-i18n="statMastered">Mastered</span>
+              <span class="stat-box-value" id="stat-mastered-cards" style="color: var(--accent-text);">0</span>
             </div>
           </div>
         </div>
@@ -157,7 +240,10 @@
         <div class="study-container">
           <!-- Top bar inside study view -->
           <div class="study-header">
-            <span class="study-progress-info" id="study-progress-counter">Card 1 of 5</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="study-progress-info" id="study-progress-counter">Card 1 of 5</span>
+              <span class="badge" id="study-queue-remaining" style="background: var(--bg-tertiary); color: var(--text-secondary); font-size: 0.75rem;">5 left</span>
+            </div>
             <span class="study-mode-badge" id="study-mode-indicator">Word Mode</span>
             <button type="button" class="study-exit-btn" id="study-exit-btn" data-i18n="backToDashboard">✕ Exit</button>
           </div>
@@ -177,6 +263,10 @@
             <div class="legend-item">
               <kbd class="kbd-badge">Space</kbd>
               <span data-i18n="shortcutFlip">Flip / Check</span>
+            </div>
+            <div class="legend-item">
+              <kbd class="kbd-badge">Enter</kbd>
+              <span data-i18n="shortcutEnterSubmit">Submit</span>
             </div>
             <div class="legend-item">
               <kbd class="kbd-badge">1</kbd><kbd class="kbd-badge">2</kbd><kbd class="kbd-badge">3</kbd><kbd class="kbd-badge">4</kbd>
@@ -209,13 +299,17 @@
           </div>
 
           <div class="browser-filters-row">
-            <select id="filter-mode-select" class="filter-select">
+            <select id="filter-folder-select" class="filter-select" aria-label="Filter by Folder">
+              <option value="all" data-i18n="allFolders">All Folders</option>
+            </select>
+
+            <select id="filter-mode-select" class="filter-select" aria-label="Filter by Mode">
               <option value="all" data-i18n="filterAllModes">All Modes</option>
               <option value="word" data-i18n="filterWordMode">Word Mode</option>
               <option value="definition" data-i18n="filterDefMode">Definition Mode</option>
             </select>
 
-            <select id="filter-status-select" class="filter-select">
+            <select id="filter-status-select" class="filter-select" aria-label="Filter by Status">
               <option value="all" data-i18n="filterAllStatus">All Statuses</option>
               <option value="new" data-i18n="statusNew">New</option>
               <option value="learning" data-i18n="statusLearning">Learning</option>
@@ -223,7 +317,7 @@
               <option value="mastered" data-i18n="statusMastered">Mastered</option>
             </select>
 
-            <select id="filter-lang-select" class="filter-select">
+            <select id="filter-lang-select" class="filter-select" aria-label="Filter by Language">
               <option value="all" data-i18n="filterAllLangs">All Languages</option>
               <option value="en">English (EN)</option>
               <option value="ru">Russian (RU)</option>
@@ -242,6 +336,7 @@
               <tr>
                 <th data-i18n="tblTerm">Term / Prompt</th>
                 <th data-i18n="tblTranslation">Translation / Definition</th>
+                <th data-i18n="tblFolder">Folder</th>
                 <th data-i18n="tblPair">Language Pair</th>
                 <th data-i18n="tblMode">Mode</th>
                 <th data-i18n="tblStatus">Status</th>
@@ -298,23 +393,33 @@
         <div class="settings-section">
           <h3 class="settings-section-title" data-i18n="settingsTitle">Study Parameters</h3>
           
+          <!-- Daily New Limit with No-Limit Toggle -->
           <div class="settings-row">
             <div class="settings-info">
               <h4 data-i18n="dailyNewLimit">Daily New Cards Limit</h4>
               <p data-i18n="dailyNewLimitDesc">Maximum number of unstudied cards introduced per daily session.</p>
             </div>
-            <div class="settings-ctrl">
-              <input type="number" id="setting-daily-new" class="form-input" min="1" max="200" value="20">
+            <div class="settings-ctrl" style="display: flex; align-items: center; gap: 12px;">
+              <input type="number" id="setting-daily-new" class="form-input" min="1" max="200" value="20" style="width: 100px;">
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem; cursor: pointer; white-space: nowrap;">
+                <input type="checkbox" id="setting-daily-new-nolimit" style="accent-color: var(--accent-primary);">
+                <span data-i18n="noLimitToggle">No Limit (Unlimited)</span>
+              </label>
             </div>
           </div>
 
+          <!-- Daily Review Limit with No-Limit Toggle -->
           <div class="settings-row">
             <div class="settings-info">
               <h4 data-i18n="dailyReviewLimit">Daily Max Reviews Limit</h4>
               <p data-i18n="dailyReviewLimitDesc">Cap on the number of due cards presented per day.</p>
             </div>
-            <div class="settings-ctrl">
-              <input type="number" id="setting-daily-reviews" class="form-input" min="5" max="500" value="50">
+            <div class="settings-ctrl" style="display: flex; align-items: center; gap: 12px;">
+              <input type="number" id="setting-daily-reviews" class="form-input" min="5" max="500" value="50" style="width: 100px;">
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem; cursor: pointer; white-space: nowrap;">
+                <input type="checkbox" id="setting-daily-reviews-nolimit" style="accent-color: var(--accent-primary);">
+                <span data-i18n="noLimitToggle">No Limit (Unlimited)</span>
+              </label>
             </div>
           </div>
 
@@ -359,7 +464,7 @@
           <div class="settings-row">
             <div class="settings-info">
               <h4 data-i18n="exportDataBtn">Export All Data (JSON)</h4>
-              <p data-i18n="exportDataDesc">Download a complete local backup of all cards, logs, and settings.</p>
+              <p data-i18n="exportDataDesc">Download a complete local backup of all folders, cards, logs, and settings.</p>
             </div>
             <div class="settings-ctrl">
               <button type="button" class="btn btn-secondary" id="btn-export-json" data-i18n="exportDataBtn">Export JSON</button>
@@ -380,7 +485,7 @@
           <div class="settings-row">
             <div class="settings-info">
               <h4 data-i18n="resetAllDataBtn" style="color: var(--color-danger);">Reset to Default Seed Data</h4>
-              <p data-i18n="resetAllDataDesc">Restore original sample cards and wipe custom deck history.</p>
+              <p data-i18n="resetAllDataDesc">Restore original sample folders and cards and wipe custom deck history.</p>
             </div>
             <div class="settings-ctrl">
               <button type="button" class="btn btn-danger" id="btn-reset-seed" data-i18n="resetAllDataBtn">Reset All Data</button>
@@ -391,7 +496,7 @@
     </main>
   </div>
 
-  <!-- MODAL: ADD / EDIT CARD WITH AUTO-TRANSLATOR -->
+  <!-- MODAL: ADD / EDIT CARD WITH AUTO-TRANSLATOR & FOLDER ENFORCEMENT -->
   <div class="modal-backdrop hidden" id="modal-card-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-card-title">
     <div class="modal-container">
       <div class="modal-header">
@@ -400,6 +505,14 @@
       </div>
 
       <div class="modal-body">
+        <!-- Target Folder Selector -->
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="form-label" for="card-form-folder" data-i18n="fieldFolderSelect">Target Folder</label>
+          <select id="card-form-folder" class="form-select" required>
+            <!-- Injected dynamically by JS -->
+          </select>
+        </div>
+
         <!-- Mode Tabs -->
         <div class="modal-tabs" role="tablist">
           <button type="button" class="modal-tab active" id="modal-tab-word" role="tab" data-mode="word" data-i18n="tabWord">Word / Vocabulary</button>
@@ -409,7 +522,7 @@
         <!-- Duplicate warning alert -->
         <div class="duplicate-alert hidden" id="card-duplicate-alert">
           <span>⚠️</span>
-          <span id="duplicate-alert-text" data-i18n="duplicateWarning">Warning: This term already exists in your deck for this mode!</span>
+          <span id="duplicate-alert-text" data-i18n="duplicateWarningFolder">Warning: This term already exists in this folder for this mode!</span>
         </div>
 
         <form id="card-edit-form">
@@ -491,6 +604,78 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" id="modal-card-cancel" data-i18n="cancelBtn">Cancel</button>
         <button type="button" class="btn btn-primary" id="modal-card-save" data-i18n="saveCardBtn">Save Card</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CREATE / EDIT FOLDER -->
+  <div class="modal-backdrop hidden" id="modal-folder-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-folder-title">
+    <div class="modal-container" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-folder-title" data-i18n="modalFolderTitle">New Folder</h3>
+        <button type="button" class="modal-close-btn" id="modal-folder-close" aria-label="Close Modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <form id="folder-edit-form">
+          <input type="hidden" id="folder-form-id" value="">
+
+          <div class="form-group">
+            <label class="form-label" for="folder-form-name" data-i18n="folderName">Folder Name</label>
+            <input type="text" id="folder-form-name" class="form-input" required data-i18n-placeholder="folderNamePlaceholder" placeholder="e.g., Travel Vocabulary, Advanced Philosophy...">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="folderType">Folder Type</label>
+            <div class="radio-pill-group">
+              <label style="flex: 1;">
+                <input type="radio" name="folder-form-type" id="folder-type-words" value="words" class="hidden">
+                <div class="radio-pill-label" data-i18n="folderWords">Words Only</div>
+              </label>
+              <label style="flex: 1;">
+                <input type="radio" name="folder-form-type" id="folder-type-defs" value="definitions" class="hidden">
+                <div class="radio-pill-label" data-i18n="folderDefinitions">Definitions Only</div>
+              </label>
+              <label style="flex: 1;">
+                <input type="radio" name="folder-form-type" id="folder-type-mixed" value="mixed" checked class="hidden">
+                <div class="radio-pill-label" data-i18n="folderMixed">Mixed (Both)</div>
+              </label>
+            </div>
+            <span class="form-help" style="margin-top: 6px; display: block;">
+              Words folders only accept Word cards; Definitions folders only accept Definition cards; Mixed folders accept both.
+            </span>
+          </div>
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="modal-folder-cancel" data-i18n="cancelBtn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="modal-folder-save" data-i18n="saveFolderBtn">Save Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: MOVE CARD TO FOLDER -->
+  <div class="modal-backdrop hidden" id="modal-move-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-move-title">
+    <div class="modal-container" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-move-title" data-i18n="moveModalTitle">Move Card to Folder</h3>
+        <button type="button" class="modal-close-btn" id="modal-move-close" aria-label="Close Modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <input type="hidden" id="move-card-id" value="">
+        <div class="form-group">
+          <label class="form-label" for="move-card-folder-select" data-i18n="selectTargetFolder">Select Destination Folder</label>
+          <select id="move-card-folder-select" class="form-select">
+            <!-- Injected by JS -->
+          </select>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="modal-move-cancel" data-i18n="cancelBtn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="modal-move-save" data-i18n="moveCardBtn">Move Card</button>
       </div>
     </div>
   </div>

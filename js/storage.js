@@ -1,30 +1,40 @@
 /**
  * FreeWord - Storage & Persistence Engine (LocalStorage + Export/Import)
+ * Handles Folders, Cards, Review Logs, and User Settings with strict schemas.
  */
 
-import { INITIAL_MOCK_CARDS, INITIAL_MOCK_LOGS } from './mockData.js';
+import { INITIAL_MOCK_FOLDERS, INITIAL_MOCK_CARDS, INITIAL_MOCK_LOGS } from './mockData.js';
 import { createCard } from './srs.js';
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
+  FOLDERS: 'freeword_folders',
   CARDS: 'freeword_cards',
   LOGS: 'freeword_logs',
   SETTINGS: 'freeword_settings'
 };
 
-const DEFAULT_SETTINGS = {
-  activeMode: 'word', // 'word' | 'definition'
-  theme: 'dark',      // 'dark' | 'light'
+export const DEFAULT_SETTINGS = {
+  activeMode: 'all', // 'all' | 'word' | 'definition'
+  theme: 'dark',     // 'dark' | 'light'
   dailyNewLimit: 20,
+  dailyNewLimitNoLimit: false,
   dailyReviewLimit: 50,
+  dailyReviewLimitNoLimit: false,
   defaultSourceLang: 'en',
   defaultTargetLang: 'es',
-  selectedLanguagePair: 'all' // 'all' or 'en-es', etc.
+  selectedLanguagePair: 'all',
+  selectedFolderIds: ['folder_words_1', 'folder_defs_1', 'folder_mixed_1']
 };
 
 /**
  * Initializes storage with mock data if first run
  */
 export function initStorage() {
+  const existingFolders = localStorage.getItem(STORAGE_KEYS.FOLDERS);
+  if (!existingFolders) {
+    localStorage.setItem(STORAGE_KEYS.FOLDERS, JSON.stringify(INITIAL_MOCK_FOLDERS));
+  }
+
   const existingCards = localStorage.getItem(STORAGE_KEYS.CARDS);
   if (!existingCards) {
     localStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(INITIAL_MOCK_CARDS));
@@ -38,13 +48,99 @@ export function initStorage() {
   const existingSettings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
   if (!existingSettings) {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
+  } else {
+    // Ensure any new setting fields are merged in
+    try {
+      const parsed = JSON.parse(existingSettings);
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify({ ...DEFAULT_SETTINGS, ...parsed }));
+    } catch (e) {
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
+    }
   }
 }
 
-/**
- * Retrieves all stored cards
- * @returns {Array} List of cards
- */
+// ==========================================
+// FOLDERS CRUD
+// ==========================================
+
+export function getFolders() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.FOLDERS);
+    return raw ? JSON.parse(raw) : [];
+  } catch (err) {
+    console.error('Error reading folders from localStorage:', err);
+    return [];
+  }
+}
+
+export function saveFolders(folders) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.FOLDERS, JSON.stringify(folders));
+  } catch (err) {
+    console.error('Error saving folders:', err);
+  }
+}
+
+export function addFolder({ name, folderType = 'mixed' }) {
+  const folders = getFolders();
+  const newFolder = {
+    id: 'folder_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+    name: name.trim() || 'Untitled Folder',
+    folderType, // 'words' | 'definitions' | 'mixed'
+    createdAt: new Date().toISOString()
+  };
+  folders.push(newFolder);
+  saveFolders(folders);
+
+  // Auto-select new folder for sessions
+  const settings = getSettings();
+  const selected = new Set(settings.selectedFolderIds || []);
+  selected.add(newFolder.id);
+  updateSettings({ selectedFolderIds: Array.from(selected) });
+
+  return newFolder;
+}
+
+export function updateFolder(updatedFolder) {
+  const folders = getFolders();
+  const idx = folders.findIndex(f => f.id === updatedFolder.id);
+  if (idx !== -1) {
+    folders[idx] = { ...folders[idx], ...updatedFolder };
+    saveFolders(folders);
+    return folders[idx];
+  }
+  return null;
+}
+
+export function deleteFolder(folderId) {
+  const folders = getFolders();
+  const filtered = folders.filter(f => f.id !== folderId);
+  saveFolders(filtered);
+
+  // Also remove cards that belonged to this folder
+  const cards = getCards();
+  const remainingCards = cards.filter(c => c.folderId !== folderId);
+  saveCards(remainingCards);
+
+  // Update selectedFolderIds in settings
+  const settings = getSettings();
+  if (settings.selectedFolderIds) {
+    const newSelected = settings.selectedFolderIds.filter(id => id !== folderId);
+    updateSettings({ selectedFolderIds: newSelected });
+  }
+
+  return filtered;
+}
+
+export function getFolderById(folderId) {
+  const folders = getFolders();
+  return folders.find(f => f.id === folderId) || null;
+}
+
+// ==========================================
+// CARDS CRUD
+// ==========================================
+
 export function getCards() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.CARDS);
@@ -55,9 +151,6 @@ export function getCards() {
   }
 }
 
-/**
- * Saves all cards to storage
- */
 export function saveCards(cards) {
   try {
     localStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(cards));
@@ -66,20 +159,23 @@ export function saveCards(cards) {
   }
 }
 
-/**
- * Adds a new card
- */
 export function addCard(cardData) {
-  const card = createCard(cardData);
+  // Ensure valid folderId
+  let folderId = cardData.folderId;
+  const folders = getFolders();
+  if (!folderId || !folders.some(f => f.id === folderId)) {
+    // Pick first compatible folder or any folder
+    const compatible = folders.find(f => f.folderType === 'mixed' || (cardData.mode === 'word' ? f.folderType === 'words' : f.folderType === 'definitions'));
+    folderId = compatible ? compatible.id : (folders[0] ? folders[0].id : 'folder_default');
+  }
+
+  const card = createCard({ ...cardData, folderId });
   const cards = getCards();
   cards.unshift(card);
   saveCards(cards);
   return card;
 }
 
-/**
- * Updates an existing card
- */
 export function updateCard(updatedCard) {
   const cards = getCards();
   const index = cards.findIndex(c => c.id === updatedCard.id);
@@ -91,9 +187,6 @@ export function updateCard(updatedCard) {
   return null;
 }
 
-/**
- * Deletes a card by id
- */
 export function deleteCard(cardId) {
   const cards = getCards();
   const filtered = cards.filter(c => c.id !== cardId);
@@ -101,9 +194,28 @@ export function deleteCard(cardId) {
   return filtered;
 }
 
-/**
- * Resets SRS parameters of a card back to 'new'
- */
+export function moveCardToFolder(cardId, newFolderId) {
+  const cards = getCards();
+  const card = cards.find(c => c.id === cardId);
+  const targetFolder = getFolderById(newFolderId);
+
+  if (!card || !targetFolder) {
+    return { success: false, error: 'Card or folder not found.' };
+  }
+
+  // Strict type check
+  if (targetFolder.folderType === 'words' && card.mode !== 'word') {
+    return { success: false, error: 'Cannot move definition card to a Words-Only folder.' };
+  }
+  if (targetFolder.folderType === 'definitions' && card.mode !== 'definition') {
+    return { success: false, error: 'Cannot move word card to a Definitions-Only folder.' };
+  }
+
+  card.folderId = newFolderId;
+  saveCards(cards);
+  return { success: true, card };
+}
+
 export function resetCardSRS(cardId) {
   const cards = getCards();
   const card = cards.find(c => c.id === cardId);
@@ -111,7 +223,7 @@ export function resetCardSRS(cardId) {
     card.status = 'new';
     card.interval = 0;
     card.repetitions = 0;
-    card.easeFactor = 2.5;
+    card.easeFactor = 2.50;
     card.nextReviewDate = new Date().toISOString();
     card.lastReviewedDate = null;
     saveCards(cards);
@@ -120,9 +232,10 @@ export function resetCardSRS(cardId) {
   return null;
 }
 
-/**
- * Retrieves review logs
- */
+// ==========================================
+// REVIEW LOGS
+// ==========================================
+
 export function getReviewLogs() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.LOGS);
@@ -133,9 +246,6 @@ export function getReviewLogs() {
   }
 }
 
-/**
- * Appends a review log entry
- */
 export function addReviewLog(logEntry) {
   try {
     const logs = getReviewLogs();
@@ -146,9 +256,10 @@ export function addReviewLog(logEntry) {
   }
 }
 
-/**
- * Retrieves user settings
- */
+// ==========================================
+// SETTINGS
+// ==========================================
+
 export function getSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
@@ -160,9 +271,6 @@ export function getSettings() {
   }
 }
 
-/**
- * Updates settings partially
- */
 export function updateSettings(partial) {
   try {
     const current = getSettings();
@@ -175,27 +283,31 @@ export function updateSettings(partial) {
   }
 }
 
-/**
- * Exports all data as JSON
- */
+// ==========================================
+// BACKUP: EXPORT & IMPORT
+// ==========================================
+
 export function exportAllData() {
   return JSON.stringify({
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
+    folders: getFolders(),
     cards: getCards(),
     logs: getReviewLogs(),
     settings: getSettings()
   }, null, 2);
 }
 
-/**
- * Imports data from JSON string
- */
 export function importAllData(jsonString) {
   try {
     const parsed = JSON.parse(jsonString);
     if (!parsed || !Array.isArray(parsed.cards)) {
       throw new Error('Invalid backup file format: missing cards array.');
+    }
+
+    // Restore folders
+    if (Array.isArray(parsed.folders) && parsed.folders.length > 0) {
+      saveFolders(parsed.folders);
     }
 
     const cards = parsed.cards.map(c => createCard(c));
@@ -215,10 +327,8 @@ export function importAllData(jsonString) {
   }
 }
 
-/**
- * Resets storage back to initial mock seed data
- */
 export function resetToSeedData() {
+  localStorage.setItem(STORAGE_KEYS.FOLDERS, JSON.stringify(INITIAL_MOCK_FOLDERS));
   localStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(INITIAL_MOCK_CARDS));
   localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(INITIAL_MOCK_LOGS));
   localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
