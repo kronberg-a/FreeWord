@@ -176,6 +176,23 @@ export function addCard(cardData) {
   return card;
 }
 
+export function addCards(cardsDataArray) {
+  const folders = getFolders();
+  const existingCards = getCards();
+  const createdCards = cardsDataArray.map(cardData => {
+    let folderId = cardData.folderId;
+    if (!folderId || !folders.some(f => f.id === folderId)) {
+      const compatible = folders.find(f => f.folderType === 'mixed' || (cardData.mode === 'word' ? f.folderType === 'words' : f.folderType === 'definitions'));
+      folderId = compatible ? compatible.id : (folders[0] ? folders[0].id : 'folder_default');
+    }
+    return createCard({ ...cardData, folderId });
+  });
+
+  const updatedCards = [...createdCards, ...existingCards];
+  saveCards(updatedCards);
+  return createdCards;
+}
+
 export function updateCard(updatedCard) {
   const cards = getCards();
   const index = cards.findIndex(c => c.id === updatedCard.id);

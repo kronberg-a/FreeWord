@@ -8,10 +8,11 @@ import { getCurrentLanguage, setLanguage, onLanguageChange, t } from './i18n.js'
 import { processReview, buildStudyQueue, STATUS, RATING } from './srs.js';
 import { 
   initStorage, getFolders, saveFolders, addFolder, updateFolder, deleteFolder, getFolderById,
-  getCards, saveCards, addCard, updateCard, deleteCard, moveCardToFolder, resetCardSRS,
+  getCards, saveCards, addCard, addCards, updateCard, deleteCard, moveCardToFolder, resetCardSRS,
   getReviewLogs, addReviewLog, getSettings, updateSettings, exportAllData, importAllData, resetToSeedData
 } from './storage.js';
 import { translateText, checkDuplicate, debounce } from './translator.js';
+import { extractSlugFromUrl, parseFlashcardsText, fetchQuizletSet } from './quizlet.js';
 import { 
   applyI18n, showToast, updateHeaderStats, renderDashboard, renderWordStudyCard, 
   renderDefinitionStudyCard, renderSessionCompleted, renderLibraryTable, renderAnalytics 
@@ -112,6 +113,7 @@ function initApp() {
   setupCardModalListeners();
   setupFolderModalListeners();
   setupMoveModalListeners();
+  setupQuizletModalListeners();
   setupGlobalKeyboardShortcuts();
 
   // Initial render
@@ -495,6 +497,11 @@ function setupGlobalKeyboardShortcuts() {
       }
       if (moveModal && !moveModal.classList.contains('hidden')) {
         closeMoveModal();
+        return;
+      }
+      const quizletModal = document.getElementById('modal-quizlet-backdrop');
+      if (quizletModal && !quizletModal.classList.contains('hidden')) {
+        quizletModal.classList.add('hidden');
         return;
       }
       if (state.currentView === 'study') {
@@ -1102,6 +1109,189 @@ function openMoveModal(cardId) {
 function closeMoveModal() {
   const backdrop = document.getElementById('modal-move-backdrop');
   backdrop.classList.add('hidden');
+}
+
+/**
+ * Quizlet Import Modal Controller
+ */
+function setupQuizletModalListeners() {
+  const backdrop = document.getElementById('modal-quizlet-backdrop');
+  const openBtn = document.getElementById('btn-open-import-quizlet');
+  const closeBtn = document.getElementById('modal-quizlet-close');
+  const cancelBtn = document.getElementById('modal-quizlet-cancel');
+  const urlInput = document.getElementById('quizlet-input-url');
+  const fetchBtn = document.getElementById('btn-fetch-quizlet-url');
+  const spinner = document.getElementById('quizlet-fetch-spinner');
+  const cloudflareAlert = document.getElementById('quizlet-cloudflare-alert');
+  const textInput = document.getElementById('quizlet-input-text');
+  const detectedBadge = document.getElementById('quizlet-detected-badge');
+  const folderNameInput = document.getElementById('quizlet-folder-name');
+  const folderTypeSelect = document.getElementById('quizlet-folder-type');
+  const sourceLangSelect = document.getElementById('quizlet-source-lang');
+  const targetLangSelect = document.getElementById('quizlet-target-lang');
+  const previewContainer = document.getElementById('quizlet-preview-container');
+  const previewTbody = document.getElementById('quizlet-preview-tbody');
+  const doImportBtn = document.getElementById('btn-do-import-quizlet');
+
+  let parsedCards = [];
+
+  const updatePreview = () => {
+    const rawText = textInput ? textInput.value : '';
+    parsedCards = parseFlashcardsText(rawText);
+
+    if (detectedBadge) {
+      detectedBadge.textContent = t('quizletCardsFound', { n: parsedCards.length });
+      detectedBadge.className = parsedCards.length > 0 ? 'badge badge-mastered' : 'badge';
+    }
+
+    if (parsedCards.length > 0) {
+      if (previewContainer) previewContainer.classList.remove('hidden');
+      if (previewTbody) {
+        // Show sample of first 15 cards
+        const sample = parsedCards.slice(0, 15);
+        previewTbody.innerHTML = sample.map((c, idx) => `
+          <tr>
+            <td style="color: var(--text-muted);">${idx + 1}</td>
+            <td class="cell-term">${escapeHtml(c.front)}</td>
+            <td class="cell-translation">${escapeHtml(c.back)}</td>
+          </tr>
+        `).join('') + (parsedCards.length > 15 ? `
+          <tr>
+            <td colspan="3" style="text-align: center; color: var(--text-muted); font-style: italic;">
+              ...and ${parsedCards.length - 15} more cards
+            </td>
+          </tr>
+        ` : '');
+      }
+      if (doImportBtn) doImportBtn.disabled = false;
+    } else {
+      if (previewContainer) previewContainer.classList.add('hidden');
+      if (doImportBtn) doImportBtn.disabled = true;
+    }
+  };
+
+  const openQuizletModal = () => {
+    const settings = getSettings();
+    if (urlInput) urlInput.value = '';
+    if (textInput) textInput.value = '';
+    if (cloudflareAlert) cloudflareAlert.classList.add('hidden');
+    if (folderNameInput) folderNameInput.value = '';
+    if (folderTypeSelect) folderTypeSelect.value = 'words';
+    if (sourceLangSelect) sourceLangSelect.value = settings.defaultSourceLang || 'en';
+    if (targetLangSelect) targetLangSelect.value = settings.defaultTargetLang || 'es';
+    parsedCards = [];
+    updatePreview();
+    if (backdrop) backdrop.classList.remove('hidden');
+    if (urlInput) urlInput.focus();
+  };
+
+  const closeQuizletModal = () => {
+    if (backdrop) backdrop.classList.add('hidden');
+  };
+
+  if (openBtn) openBtn.addEventListener('click', openQuizletModal);
+  if (closeBtn) closeBtn.addEventListener('click', closeQuizletModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeQuizletModal);
+  if (backdrop) {
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) closeQuizletModal();
+    });
+  }
+
+  // URL input change: automatically extract folder slug
+  if (urlInput) {
+    urlInput.addEventListener('input', () => {
+      const slugTitle = extractSlugFromUrl(urlInput.value);
+      if (slugTitle && (!folderNameInput.value || folderNameInput.value.startsWith('Quizlet'))) {
+        folderNameInput.value = slugTitle;
+      }
+    });
+  }
+
+  // Fetch URL button
+  if (fetchBtn) {
+    fetchBtn.addEventListener('click', async () => {
+      const url = urlInput.value.trim();
+      if (!url) {
+        urlInput.focus();
+        return;
+      }
+
+      const slugTitle = extractSlugFromUrl(url);
+      if (slugTitle && !folderNameInput.value) {
+        folderNameInput.value = slugTitle;
+      }
+
+      if (spinner) spinner.classList.remove('hidden');
+      fetchBtn.disabled = true;
+      if (cloudflareAlert) cloudflareAlert.classList.add('hidden');
+
+      try {
+        const result = await fetchQuizletSet(url);
+        if (result.success && result.cards.length > 0) {
+          if (folderNameInput && result.title) folderNameInput.value = result.title;
+          textInput.value = result.cards.map(c => `${c.front}\t${c.back}`).join('\n');
+          updatePreview();
+          showToast(t('quizletCardsFound', { n: result.cards.length }) + ' ✓');
+        } else {
+          // Cloudflare challenge or fetch blocked: show helpful alert
+          if (cloudflareAlert) cloudflareAlert.classList.remove('hidden');
+          if (folderNameInput && !folderNameInput.value) {
+            folderNameInput.value = result.suggestedTitle || 'Quizlet Import';
+          }
+          if (textInput) textInput.focus();
+        }
+      } catch (err) {
+        console.error(err);
+        if (cloudflareAlert) cloudflareAlert.classList.remove('hidden');
+      } finally {
+        if (spinner) spinner.classList.add('hidden');
+        fetchBtn.disabled = false;
+      }
+    });
+  }
+
+  // Textarea input
+  if (textInput) {
+    textInput.addEventListener('input', debounce(updatePreview, 150));
+  }
+
+  // Import Action
+  if (doImportBtn) {
+    doImportBtn.addEventListener('click', () => {
+      if (parsedCards.length === 0) return;
+
+      const folderName = (folderNameInput.value || '').trim() || 'Quizlet Import';
+      const folderType = folderTypeSelect.value || 'words';
+      const sourceLang = sourceLangSelect.value || 'en';
+      const targetLang = targetLangSelect.value || 'es';
+
+      // 1. Create separate new folder
+      const newFolder = addFolder({ name: folderName, folderType });
+
+      // 2. Prepare card entries
+      const cardsToCreate = parsedCards.map(c => ({
+        folderId: newFolder.id,
+        mode: folderType === 'definitions' ? 'definition' : 'word',
+        front: c.front,
+        back: c.back,
+        sourceLang,
+        targetLang,
+        keyConcepts: []
+      }));
+
+      // 3. Batch save cards
+      addCards(cardsToCreate);
+
+      // 4. Select the new folder for immediate study
+      state.selectedFolderIds = [newFolder.id];
+      updateSettings({ selectedFolderIds: [newFolder.id] });
+
+      showToast(t('importSuccessMsg', { folder: newFolder.name, count: cardsToCreate.length }));
+      closeQuizletModal();
+      refreshCurrentView();
+    });
+  }
 }
 
 /**

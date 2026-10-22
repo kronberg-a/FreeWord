@@ -175,6 +175,10 @@
                 <span>+</span>
                 <span data-i18n="newFolderBtn">New Folder</span>
               </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-open-import-quizlet" title="Import from Quizlet">
+                <span>📥</span>
+                <span data-i18n="importQuizletBtn">Import Quizlet</span>
+              </button>
             </div>
           </div>
 
@@ -671,6 +675,116 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" id="modal-move-cancel" data-i18n="cancelBtn">Cancel</button>
         <button type="button" class="btn btn-primary" id="modal-move-save" data-i18n="moveCardBtn">Move Card</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: IMPORT FROM QUIZLET -->
+  <div class="modal-backdrop hidden" id="modal-quizlet-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-quizlet-title">
+    <div class="modal-container" style="max-width: 620px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-quizlet-title" data-i18n="importQuizletTitle">Import Flashcards from Quizlet</h3>
+        <button type="button" class="modal-close-btn" id="modal-quizlet-close" aria-label="Close Modal">&times;</button>
+      </div>
+
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+        <!-- URL Input with Fetch button -->
+        <div class="form-group">
+          <label class="form-label" for="quizlet-input-url" data-i18n="quizletUrlLabel">Quizlet Set Link (URL)</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="url" id="quizlet-input-url" class="form-input" style="flex: 1;" placeholder="https://quizlet.com/812154148/spanish-vocabulary-flash-cards/" data-i18n-placeholder="quizletUrlPlaceholder">
+            <button type="button" class="btn btn-secondary" id="btn-fetch-quizlet-url">
+              <span id="quizlet-fetch-spinner" class="hidden">⏳</span>
+              <span>🔗</span>
+              <span data-i18n="fetchUrlBtn">Fetch</span>
+            </button>
+          </div>
+          <span class="form-help">Paste a Quizlet set URL to auto-extract title and terms.</span>
+        </div>
+
+        <!-- Cloudflare Info Alert (Shown when URL fetch is blocked by Cloudflare or on fetch error) -->
+        <div class="session-alert-banner hidden" id="quizlet-cloudflare-alert" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 0.82rem; line-height: 1.4;">
+          <span>🛡️</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 700; margin-bottom: 2px;" data-i18n="quizletCloudflareAlert">Quizlet's Cloudflare bot shield blocked direct URL reading. Tip: Click '...' on Quizlet, select 'Export', copy the text, and paste it below!</div>
+          </div>
+        </div>
+
+        <!-- Text / Export Paste Area -->
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" for="quizlet-input-text" data-i18n="quizletTextLabel" style="margin-bottom: 0;">Or Paste Quizlet Export / Flashcard Text</label>
+            <span class="badge" id="quizlet-detected-badge" style="background: var(--bg-tertiary); font-size: 0.75rem;">0 cards</span>
+          </div>
+          <textarea id="quizlet-input-text" class="form-textarea" rows="5" placeholder="term	translation&#10;hola	hello&#10;adiós	goodbye..." data-i18n-placeholder="quizletTextPlaceholder"></textarea>
+          <span class="form-help">Supports Quizlet export (Tab-separated), comma-separated, dash-separated, or copied rows.</span>
+        </div>
+
+        <!-- Target Folder Name & Languages -->
+        <div class="form-row">
+          <div class="form-group" style="flex: 2;">
+            <label class="form-label" for="quizlet-folder-name" data-i18n="quizletTargetFolder">New Folder Name</label>
+            <input type="text" id="quizlet-folder-name" class="form-input" placeholder="e.g. Spanish Vocabulary" required>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-label" for="quizlet-folder-type">Folder Type</label>
+            <select id="quizlet-folder-type" class="form-select">
+              <option value="words" selected>Words Only</option>
+              <option value="mixed">Mixed</option>
+              <option value="definitions">Definitions Only</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Language Pairing -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="quizlet-source-lang" data-i18n="fieldSourceLang">Study Language (Source)</label>
+            <select id="quizlet-source-lang" class="form-select">
+              <option value="en">English (EN)</option>
+              <option value="es">Spanish (ES)</option>
+              <option value="de">German (DE)</option>
+              <option value="fr">French (FR)</option>
+              <option value="it">Italian (IT)</option>
+              <option value="ru">Russian (RU)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="quizlet-target-lang" data-i18n="fieldTargetLang">Translation Language (Target)</label>
+            <select id="quizlet-target-lang" class="form-select">
+              <option value="es">Spanish (ES)</option>
+              <option value="en">English (EN)</option>
+              <option value="ru">Russian (RU)</option>
+              <option value="de">German (DE)</option>
+              <option value="fr">French (FR)</option>
+              <option value="it">Italian (IT)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Live Preview Box -->
+        <div id="quizlet-preview-container" class="hidden" style="max-height: 160px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-secondary);">
+          <table class="data-table" style="font-size: 0.8rem;">
+            <thead>
+              <tr>
+                <th style="width: 32px;">#</th>
+                <th style="width: 48%;">Term (Front)</th>
+                <th style="width: 48%;">Translation (Back)</th>
+              </tr>
+            </thead>
+            <tbody id="quizlet-preview-tbody">
+              <!-- Injected by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="modal-quizlet-cancel" data-i18n="cancelBtn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-do-import-quizlet" disabled>
+          <span>📥</span>
+          <span id="btn-do-import-text" data-i18n="doImportBtn">Create Folder & Import Cards</span>
+        </button>
       </div>
     </div>
   </div>
