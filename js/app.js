@@ -5,7 +5,7 @@
  */
 
 import { getCurrentLanguage, setLanguage, onLanguageChange, t } from './i18n.js';
-import { processReview, buildStudyQueue, STATUS, RATING } from './srs.js';
+import { processReview, buildStudyQueue, STATUS, RATING, processSessionCardExit } from './srs.js';
 import { 
   initStorage, getFolders, saveFolders, addFolder, updateFolder, deleteFolder, getFolderById,
   getCards, saveCards, addCard, addCards, updateCard, deleteCard, moveCardToFolder, resetCardSRS,
@@ -32,7 +32,9 @@ const state = {
     totalInitial: 0,
     completedCards: new Set(),
     requeuedCards: new Set(),
-    firstPassCount: 0,
+    cleanPassCount: 0,
+    assistedPassCount: 0,
+    recoveredPassCount: 0,
     studyController: null
   },
   editingCardId: null,
@@ -375,7 +377,9 @@ function startStudySession() {
   state.studySession.totalInitial = queue.length;
   state.studySession.completedCards = new Set();
   state.studySession.requeuedCards = new Set();
-  state.studySession.firstPassCount = 0;
+  state.studySession.cleanPassCount = 0;
+  state.studySession.assistedPassCount = 0;
+  state.studySession.recoveredPassCount = 0;
 
   switchView('study');
   loadNextStudyCard();
@@ -383,6 +387,7 @@ function startStudySession() {
 
 /**
  * Loads and renders the next card in the active session queue
+ * Session ONLY completes when activeQueue.length === 0.
  */
 function loadNextStudyCard() {
   const session = state.studySession;
@@ -391,8 +396,9 @@ function loadNextStudyCard() {
     // Session completed! All items mastered!
     renderSessionCompleted({
       totalMastered: session.totalInitial,
-      firstPassCount: session.firstPassCount,
-      requeuedCount: session.requeuedCards.size
+      cleanPassCount: session.cleanPassCount || 0,
+      assistedPassCount: session.assistedPassCount || 0,
+      recoveredPassCount: session.recoveredPassCount || 0
     }, () => {
       switchView('dashboard');
     });
@@ -412,45 +418,72 @@ function loadNextStudyCard() {
   let cardHandled = false;
 
   const callbacks = {
-    // Called when user passes (correct recall, high fuzzy score, or manual pass)
-    onPass: (rating = RATING.GOOD) => {
+    // Called when user passes (correct recall, high fuzzy score, self-eval remembered, or manual grade)
+    onPass: (outcomeType = 'clean', options = {}) => {
       if (cardHandled) return;
       cardHandled = true;
 
-      const { updatedCard, reviewLog } = processReview(card, rating);
+      let effectiveOutcome = outcomeType;
+      if (card.hadErrorInSession) {
+        effectiveOutcome = 'recovered';
+      }
+
+      const { updatedCard, reviewLog } = processSessionCardExit(card, effectiveOutcome, options);
       updateCard(updatedCard);
       addReviewLog(reviewLog);
 
-      if (!session.requeuedCards.has(card.id)) {
-        session.firstPassCount++;
+      if (effectiveOutcome === 'clean') {
+        session.cleanPassCount = (session.cleanPassCount || 0) + 1;
+      } else if (effectiveOutcome === 'assisted') {
+        session.assistedPassCount = (session.assistedPassCount || 0) + 1;
+      } else {
+        session.recoveredPassCount = (session.recoveredPassCount || 0) + 1;
       }
 
       // Remove from session queue
       session.activeQueue.shift();
       session.completedCards.add(card.id);
 
-      // Advance
+      // Advance to next card
       setTimeout(() => {
         loadNextStudyCard();
       }, 80);
     },
 
-    // Called when user fails (exhausted 3 attempts, or clicked Again/Fail)
+    // Called when user fails turn (exhausted 3 attempts, or self-eval forgot)
     onFail: () => {
       if (cardHandled) return;
       cardHandled = true;
 
-      const { updatedCard, reviewLog } = processReview(card, RATING.AGAIN);
-      updateCard(updatedCard);
-      addReviewLog(reviewLog);
+      card.hadErrorInSession = true;
+      card.currentAttempt = 1;
 
       // RE-QUEUE LOOP: Remove from front, push to back of activeQueue
       const failedCard = session.activeQueue.shift();
+      failedCard.hadErrorInSession = true;
+      failedCard.currentAttempt = 1;
       session.activeQueue.push(failedCard);
       session.requeuedCards.add(failedCard.id);
     },
 
-    // Advance to next card
+    // Override: Mark as Correct (in Definition mode when 3 attempts failed)
+    onOverride: () => {
+      const idx = session.activeQueue.indexOf(card);
+      if (idx !== -1) {
+        session.activeQueue.splice(idx, 1);
+      }
+      const outcome = card.hadErrorInSession ? 'recovered' : 'assisted';
+      const { updatedCard, reviewLog } = processSessionCardExit(card, outcome);
+      updateCard(updatedCard);
+      addReviewLog(reviewLog);
+      session.completedCards.add(card.id);
+      session.assistedPassCount = (session.assistedPassCount || 0) + 1;
+      setTimeout(() => {
+        loadNextStudyCard();
+      }, 80);
+    },
+
+    // Advance to next card in session
     onNext: () => {
       loadNextStudyCard();
     }
@@ -701,23 +734,46 @@ function setupCardModalListeners() {
   // Folder change: enforces allowed modes based on folderType!
   folderSelect.addEventListener('change', () => {
     const selectedFolder = getFolderById(folderSelect.value);
-    if (!selectedFolder) return;
+    const badge = document.getElementById('card-folder-restriction-badge');
+
+    if (!selectedFolder) {
+      if (badge) badge.textContent = t('folderRestrictionMixed');
+      return;
+    }
 
     if (selectedFolder.folderType === 'words') {
+      if (badge) {
+        badge.textContent = t('folderRestrictionWords');
+        badge.style.color = 'var(--accent-text)';
+      }
       tabWord.disabled = false;
       tabDef.disabled = true;
-      tabDef.style.opacity = '0.4';
+      tabDef.style.opacity = '0.35';
+      tabDef.setAttribute('title', t('folderWordsOnlyError'));
+      tabWord.style.opacity = '1';
       setCardModalMode('word');
     } else if (selectedFolder.folderType === 'definitions') {
+      if (badge) {
+        badge.textContent = t('folderRestrictionDefs');
+        badge.style.color = 'var(--color-purple)';
+      }
       tabWord.disabled = true;
-      tabWord.style.opacity = '0.4';
+      tabWord.style.opacity = '0.35';
+      tabWord.setAttribute('title', t('folderDefsOnlyError'));
       tabDef.disabled = false;
+      tabDef.style.opacity = '1';
       setCardModalMode('definition');
     } else {
+      if (badge) {
+        badge.textContent = t('folderRestrictionMixed');
+        badge.style.color = 'var(--text-secondary)';
+      }
       tabWord.disabled = false;
       tabDef.disabled = false;
       tabWord.style.opacity = '1';
       tabDef.style.opacity = '1';
+      tabWord.removeAttribute('title');
+      tabDef.removeAttribute('title');
     }
 
     checkCardDuplicate();
@@ -872,12 +928,17 @@ function openCardModal(card = null, defaultMode = 'word', preselectedFolderId = 
   });
   folderSelect.innerHTML = folderOpts;
 
+  const transcriptionInput = document.getElementById('card-form-transcription');
+  const posInput = document.getElementById('card-form-pos');
+
   if (card) {
     state.editingCardId = card.id;
     modalTitle.textContent = t('modalEditTitle');
     idInput.value = card.id;
     folderSelect.value = card.folderId || (folders[0] ? folders[0].id : '');
     frontInput.value = card.front;
+    if (transcriptionInput) transcriptionInput.value = card.transcription || '';
+    if (posInput) posInput.value = card.partOfSpeech || '';
     sourceLang.value = card.sourceLang || settings.defaultSourceLang;
     targetLang.value = card.targetLang || settings.defaultTargetLang;
     backWord.value = card.mode === 'word' ? card.back : '';
@@ -895,6 +956,8 @@ function openCardModal(card = null, defaultMode = 'word', preselectedFolderId = 
     folderSelect.value = targetFid;
 
     frontInput.value = '';
+    if (transcriptionInput) transcriptionInput.value = '';
+    if (posInput) posInput.value = '';
     sourceLang.value = settings.defaultSourceLang || 'en';
     targetLang.value = settings.defaultTargetLang || 'es';
     backWord.value = '';
@@ -952,10 +1015,28 @@ function handleSaveCard(e) {
     return;
   }
 
+  const transcription = (document.getElementById('card-form-transcription')?.value || '').trim();
+  const partOfSpeech = (document.getElementById('card-form-pos')?.value || '').trim();
+
+  // Strict folder type validation
+  const targetFolder = getFolderById(folderId);
+  if (targetFolder) {
+    if (targetFolder.folderType === 'words' && mode !== 'word') {
+      showToast(t('folderWordsOnlyError'));
+      return;
+    }
+    if (targetFolder.folderType === 'definitions' && mode !== 'definition') {
+      showToast(t('folderDefsOnlyError'));
+      return;
+    }
+  }
+
   const cardData = {
     folderId,
     mode,
     front,
+    transcription,
+    partOfSpeech,
     back,
     sourceLang,
     targetLang,
@@ -1002,8 +1083,13 @@ function setupFolderModalListeners() {
     }
 
     if (id) {
-      updateFolder({ id, name, folderType });
-      showToast(t('editFolder') + ' ✓');
+      try {
+        updateFolder({ id, name, folderType });
+        showToast(t('editFolder') + ' ✓');
+      } catch (err) {
+        showToast(err.message);
+        return;
+      }
     } else {
       addFolder({ name, folderType });
       showToast(t('createFolder') + ' ✓');

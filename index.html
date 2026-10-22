@@ -506,7 +506,10 @@
       <div class="modal-body">
         <!-- Target Folder Selector -->
         <div class="form-group" style="margin-bottom: 16px;">
-          <label class="form-label" for="card-form-folder" data-i18n="fieldFolderSelect">Target Folder</label>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" for="card-form-folder" data-i18n="fieldFolderSelect" style="margin-bottom: 0;">Target Folder</label>
+            <span class="badge" id="card-folder-restriction-badge" style="font-size: 0.72rem; background: var(--bg-tertiary); color: var(--text-secondary);">Mixed</span>
+          </div>
           <select id="card-form-folder" class="form-select" required>
             <!-- Injected dynamically by JS -->
           </select>
@@ -538,6 +541,18 @@
                 <span>🌐</span>
                 <span data-i18n="autoTranslateBtn">Auto-Translate</span>
               </button>
+            </div>
+          </div>
+
+          <!-- Transcription / Phonetic IPA & Part of Speech -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="card-form-transcription" data-i18n="fieldTranscription">Transcription / IPA (Optional)</label>
+              <input type="text" id="card-form-transcription" class="form-input" data-i18n-placeholder="fieldTranscriptionPlaceholder" placeholder="e.g., /ɪˈfem.ər.əl/, [bʊx]...">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="card-form-pos" data-i18n="fieldPartOfSpeech">Part of Speech (Optional)</label>
+              <input type="text" id="card-form-pos" class="form-input" data-i18n-placeholder="fieldPartOfSpeechPlaceholder" placeholder="e.g., noun, verb, adjective, phrase...">
             </div>
           </div>
 

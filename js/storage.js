@@ -105,6 +105,20 @@ export function updateFolder(updatedFolder) {
   const folders = getFolders();
   const idx = folders.findIndex(f => f.id === updatedFolder.id);
   if (idx !== -1) {
+    const cards = getCards().filter(c => c.folderId === updatedFolder.id);
+    if (updatedFolder.folderType === 'words') {
+      const hasDefs = cards.some(c => c.mode === 'definition');
+      if (hasDefs) {
+        throw new Error('Cannot change folder to Words Only because it contains Definition cards.');
+      }
+    }
+    if (updatedFolder.folderType === 'definitions') {
+      const hasWords = cards.some(c => c.mode === 'word');
+      if (hasWords) {
+        throw new Error('Cannot change folder to Definitions Only because it contains Word cards.');
+      }
+    }
+
     folders[idx] = { ...folders[idx], ...updatedFolder };
     saveFolders(folders);
     return folders[idx];
@@ -160,13 +174,21 @@ export function saveCards(cards) {
 }
 
 export function addCard(cardData) {
-  // Ensure valid folderId
   let folderId = cardData.folderId;
   const folders = getFolders();
   if (!folderId || !folders.some(f => f.id === folderId)) {
-    // Pick first compatible folder or any folder
     const compatible = folders.find(f => f.folderType === 'mixed' || (cardData.mode === 'word' ? f.folderType === 'words' : f.folderType === 'definitions'));
     folderId = compatible ? compatible.id : (folders[0] ? folders[0].id : 'folder_default');
+  }
+
+  const folder = folders.find(f => f.id === folderId);
+  if (folder) {
+    if (folder.folderType === 'words' && cardData.mode !== 'word') {
+      throw new Error(`Folder "${folder.name}" only accepts Word cards.`);
+    }
+    if (folder.folderType === 'definitions' && cardData.mode !== 'definition') {
+      throw new Error(`Folder "${folder.name}" only accepts Definition cards.`);
+    }
   }
 
   const card = createCard({ ...cardData, folderId });
@@ -197,6 +219,17 @@ export function updateCard(updatedCard) {
   const cards = getCards();
   const index = cards.findIndex(c => c.id === updatedCard.id);
   if (index !== -1) {
+    const folders = getFolders();
+    const folder = folders.find(f => f.id === updatedCard.folderId);
+    if (folder) {
+      if (folder.folderType === 'words' && updatedCard.mode !== 'word') {
+        throw new Error(`Folder "${folder.name}" only accepts Word cards.`);
+      }
+      if (folder.folderType === 'definitions' && updatedCard.mode !== 'definition') {
+        throw new Error(`Folder "${folder.name}" only accepts Definition cards.`);
+      }
+    }
+
     cards[index] = { ...cards[index], ...updatedCard };
     saveCards(cards);
     return cards[index];
@@ -240,7 +273,10 @@ export function resetCardSRS(cardId) {
     card.status = 'new';
     card.interval = 0;
     card.repetitions = 0;
+    card.learningStep = 0;
     card.easeFactor = 2.50;
+    card.currentAttempt = 1;
+    card.hadErrorInSession = false;
     card.nextReviewDate = new Date().toISOString();
     card.lastReviewedDate = null;
     saveCards(cards);

@@ -219,67 +219,184 @@ export function extractKeyConcepts(text, lang = 'en', manualConcepts = []) {
  * @param {string} lang Language code ('en', 'ru', 'de', etc.)
  * @returns {Object} Evaluation report
  */
-export function evaluateDefinition(userText, refText, explicitKeyConcepts = [], lang = 'en') {
-  const userTokens = tokenize(userText, lang);
-  const refTokens = tokenize(refText, lang);
+/**
+ * Calculates Bigram Dice coefficient between two strings (0.0 to 1.0)
+ */
+export function bigramDiceCoefficient(s1, s2) {
+  const norm1 = normalizeWord(s1).replace(/\s+/g, ' ');
+  const norm2 = normalizeWord(s2).replace(/\s+/g, ' ');
 
-  const userContent = filterContentWords(userTokens, lang);
-  const refContent = filterContentWords(refTokens, lang);
+  if (!norm1 && !norm2) return 1.0;
+  if (!norm1 || !norm2) return 0.0;
+  if (norm1 === norm2) return 1.0;
+  if (norm1.length < 2 || norm2.length < 2) {
+    return norm1 === norm2 ? 1.0 : stringSimilarity(norm1, norm2);
+  }
 
-  // 1. Content Word Overlap & Jaccard Index
-  let matchedContentCount = 0;
-  const matchedRefIndices = new Set();
-  const matchedUserIndices = new Set();
+  const getBigrams = (str) => {
+    const map = new Map();
+    for (let i = 0; i < str.length - 1; i++) {
+      const bg = str.slice(i, i + 2);
+      map.set(bg, (map.get(bg) || 0) + 1);
+    }
+    return map;
+  };
 
-  refContent.forEach((refWord, rIdx) => {
-    let matched = false;
-    userContent.forEach((userWord, uIdx) => {
-      if (hasFuzzyMatch(refWord, [userWord], userText)) {
-        matched = true;
-        matchedUserIndices.add(uIdx);
+  const bg1 = getBigrams(norm1);
+  const bg2 = getBigrams(norm2);
+
+  let intersection = 0;
+  for (const [bg, count1] of bg1.entries()) {
+    if (bg2.has(bg)) {
+      intersection += Math.min(count1, bg2.get(bg));
+    }
+  }
+
+  const total = (norm1.length - 1) + (norm2.length - 1);
+  return total > 0 ? (2.0 * intersection) / total : 0;
+}
+
+/**
+ * Word Mode Evaluator (Section 4.1):
+ * Normalizes user input and reference answer, strips diacritics/punctuation,
+ * and checks against comma/semicolon/slash separated synonyms.
+ */
+export function evaluateWordAnswer(typed, referenceBack) {
+  if (!typed || !referenceBack) return false;
+  const cleanTyped = normalizeWord(typed);
+  if (!cleanTyped) return false;
+
+  const cleanBack = normalizeWord(referenceBack);
+  if (cleanBack === cleanTyped) return true;
+
+  // Split referenceBack by comma, semicolon, or slash
+  const options = referenceBack.split(/[,;\/]+/).map(s => s.trim()).filter(Boolean);
+  for (const opt of options) {
+    const cleanOpt = normalizeWord(opt);
+    if (!cleanOpt) continue;
+    if (cleanOpt === cleanTyped) return true;
+
+    // Check Levenshtein distance <= 1 for single words of length >= 5 to forgive 1 typo
+    if (cleanOpt.length >= 5 && Math.abs(cleanOpt.length - cleanTyped.length) <= 1) {
+      if (levenshteinDistance(cleanOpt, cleanTyped) <= 1) {
+        return true;
       }
-    });
-    if (matched) {
-      matchedRefIndices.add(rIdx);
-      matchedContentCount++;
+    }
+  }
+
+  // Also check full cleanBack with 1 typo forgiveness if length >= 5
+  if (cleanBack.length >= 5 && Math.abs(cleanBack.length - cleanTyped.length) <= 1) {
+    if (levenshteinDistance(cleanBack, cleanTyped) <= 1) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Main Hybrid Evaluation Function for Definition Mode (Section 4.2):
+ * Evaluates user typed explanation vs reference definition:
+ * 1. Token normalization + stop-word removal for EN, RU, DE, FR, IT, ES.
+ * 2. Keyword Coverage (70% weight): unique meaningful reference tokens in user input
+ *    with Levenshtein distance <= 2 per token to forgive minor spelling typos.
+ * 3. Sequence / String Similarity (30% weight): Bigram Dice coefficient.
+ *
+ * @param {string} userText The definition entered by the user
+ * @param {string} refText The reference definition stored in the card
+ * @param {Array} explicitKeyConcepts Optional user-defined key concepts
+ * @param {string} lang Language code ('en', 'ru', 'de', etc.)
+ * @returns {Object} Evaluation report
+ */
+export function evaluateDefinition(userText, refText, explicitKeyConcepts = [], lang = 'en') {
+  const normLang = (lang || 'en').toLowerCase();
+  const userTokens = tokenize(userText, normLang);
+  const refTokens = tokenize(refText, normLang);
+
+  const userContent = filterContentWords(userTokens, normLang);
+  const refContent = filterContentWords(refTokens, normLang);
+
+  // Extract Target Keywords: unique meaningful reference words + explicit concepts
+  const rawConcepts = extractKeyConcepts(refText, normLang, explicitKeyConcepts);
+  // Merge unique tokens from refContent and rawConcepts
+  const targetConceptSet = new Set(rawConcepts.map(c => normalizeWord(c)));
+  refContent.forEach(word => {
+    if (word.length >= 3) {
+      targetConceptSet.add(word);
     }
   });
 
-  const contentCoverage = refContent.length > 0 
-    ? (matchedContentCount / refContent.length) 
-    : (userContent.length > 0 ? 0.75 : 0);
+  const targetKeywords = Array.from(targetConceptSet).filter(Boolean);
 
-  // Jaccard similarity: intersection / union of content tokens
-  const unionCount = refContent.length + userContent.length - matchedContentCount;
-  const jaccard = unionCount > 0 ? (matchedContentCount / unionCount) : 1.0;
-
-  // 2. Levenshtein Full String Similarity
-  const normUserStr = normalizeWord(userText);
-  const normRefStr = normalizeWord(refText);
-  const levSimilarity = stringSimilarity(normUserStr, normRefStr);
-
-  // 3. Key Concepts Evaluation (Supports Multi-word Concepts)
-  const targetConcepts = extractKeyConcepts(refText, lang, explicitKeyConcepts);
-  let matchedConceptsCount = 0;
+  // 1. Keyword Coverage (70% weight) with Levenshtein <= 2 per token
+  let matchedKeywordsCount = 0;
   const conceptMatches = [];
 
-  targetConcepts.forEach(concept => {
-    const isMatched = hasFuzzyMatch(concept, userTokens, userText);
-    if (isMatched) matchedConceptsCount++;
-    conceptMatches.push({ concept, matched: isMatched });
+  targetKeywords.forEach(keyword => {
+    let matched = false;
+
+    // Direct multi-word check in user input
+    if (keyword.includes(' ')) {
+      const normUser = normalizeWord(userText);
+      if (normUser.includes(keyword)) {
+        matched = true;
+      }
+    }
+
+    if (!matched) {
+      // Check against user tokens with typo tolerance
+      for (const uTok of userTokens) {
+        const cleanUTok = normalizeWord(uTok);
+        if (!cleanUTok) continue;
+
+        if (cleanUTok === keyword) {
+          matched = true;
+          break;
+        }
+
+        // Stem matching if length >= 5
+        if (keyword.length >= 5 && cleanUTok.length >= 5) {
+          const stemLen = Math.min(keyword.length, cleanUTok.length, 5);
+          if (keyword.slice(0, stemLen) === cleanUTok.slice(0, stemLen)) {
+            matched = true;
+            break;
+          }
+        }
+
+        // Levenshtein distance <= 2 per token for minor typos
+        const maxDist = keyword.length <= 3 ? 1 : 2;
+        if (Math.abs(cleanUTok.length - keyword.length) <= maxDist) {
+          if (levenshteinDistance(keyword, cleanUTok) <= maxDist) {
+            matched = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (matched) {
+      matchedKeywordsCount++;
+    }
+    conceptMatches.push({ concept: keyword, matched });
   });
 
-  const conceptCoverage = targetConcepts.length > 0 
-    ? (matchedConceptsCount / targetConcepts.length) 
-    : contentCoverage;
+  const keywordCoverage = targetKeywords.length > 0 
+    ? (matchedKeywordsCount / targetKeywords.length) 
+    : (userContent.length > 0 ? 0.80 : 0);
 
-  // 4. Hybrid Weighted Score Calculation (0 - 100%)
-  // 40% Key Concepts Coverage, 35% Content Word Overlap, 15% Jaccard, 10% Levenshtein
-  const rawScore = (conceptCoverage * 0.40) + (contentCoverage * 0.35) + (jaccard * 0.15) + (levSimilarity * 0.10);
+  // 2. Sequence / String Similarity (30% weight): Bigram Dice Coefficient
+  const diceSimilarity = bigramDiceCoefficient(userText, refText);
+  const levSimilarity = stringSimilarity(normalizeWord(userText), normalizeWord(refText));
+  const sequenceScore = Math.max(diceSimilarity, levSimilarity);
+
+  // 3. Hybrid Weighted Score: 70% Keyword Coverage + 30% Sequence Similarity
+  const rawScore = (keywordCoverage * 0.70) + (sequenceScore * 0.30);
   const scorePercent = Math.min(100, Math.max(0, Math.round(rawScore * 100)));
 
-  // Determine Classification Tier:
-  // Green: >= 75% Accurate, Amber: 50-74% Partial, Red: < 50% Divergent
+  // Thresholds & Visual Classification:
+  // Green: >= 75% Accurate (Pass)
+  // Amber: 50-74% Partial (Fail turn, retry attempt)
+  // Red: < 50% Divergent (Fail turn, retry attempt)
   let tier = 'divergent';
   let suggestedRating = 1; // Again
   let tierColor = 'var(--color-danger)';
@@ -294,18 +411,21 @@ export function evaluateDefinition(userText, refText, explicitKeyConcepts = [], 
     tierColor = 'var(--color-warning)';
   }
 
-  // 5. Diff Generation
-  const diff = generateSideBySideDiff(userText, refText, lang, targetConcepts);
+  // 4. Side-by-Side Highlighted Diff
+  const diff = generateSideBySideDiff(userText, refText, normLang, targetKeywords);
+  const missingCount = Math.max(0, targetKeywords.length - matchedKeywordsCount);
 
   return {
     scorePercent,
     tier,
     tierColor,
     suggestedRating,
+    isPassed: scorePercent >= 75,
+    missingCount,
     metrics: {
-      conceptCoverage: Math.round(conceptCoverage * 100),
-      contentCoverage: Math.round(contentCoverage * 100),
-      jaccardIndex: Math.round(jaccard * 100),
+      keywordCoverage: Math.round(keywordCoverage * 100),
+      sequenceSimilarity: Math.round(sequenceScore * 100),
+      diceSimilarity: Math.round(diceSimilarity * 100),
       levenshtein: Math.round(levSimilarity * 100)
     },
     conceptMatches,
