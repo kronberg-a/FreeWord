@@ -64,17 +64,17 @@
 .flashcard-wrapper {
   perspective: 1200px;
   width: 100%;
-  min-height: 320px;
+  min-height: 380px;
   position: relative;
 }
 
 .flashcard {
   width: 100%;
-  min-height: 320px;
+  min-height: 380px;
   position: relative;
   transform-style: preserve-3d;
   transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: pointer;
+  cursor: default;
   border-radius: var(--radius-lg);
   box-shadow: var(--card-shadow);
 }
@@ -100,6 +100,10 @@
   transition: border-color var(--transition-fast);
 }
 
+.flashcard-front {
+  z-index: 2;
+}
+
 .flashcard:hover .flashcard-face {
   border-color: var(--accent-primary);
 }
@@ -107,6 +111,26 @@
 .flashcard-back {
   transform: rotateY(180deg);
   background-color: var(--bg-secondary);
+  z-index: 1;
+}
+
+/* Ensure back face cannot intercept clicks/focus when unflipped */
+.flashcard:not(.flipped) .flashcard-back {
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* When flipped, hide front face from hit testing and enable back face */
+.flashcard.flipped .flashcard-front {
+  pointer-events: none;
+  visibility: hidden;
+  z-index: 1;
+}
+
+.flashcard.flipped .flashcard-back {
+  pointer-events: auto;
+  visibility: visible;
+  z-index: 2;
 }
 
 /* Card Content Details */

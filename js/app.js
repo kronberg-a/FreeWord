@@ -547,6 +547,19 @@ function setupGlobalKeyboardShortcuts() {
     const session = state.studySession;
     if (!session || !session.studyController) return;
 
+    // Auto-focus study typing input if user starts typing while not already focused
+    const wordInput = document.getElementById('word-recall-input');
+    const defInput = document.getElementById('def-user-input');
+    const activeStudyInput = wordInput || defInput;
+
+    if (!isTyping && activeStudyInput && !activeStudyInput.disabled && activeStudyInput.offsetParent !== null) {
+      // If user pressed a printable character key (single character, not Space, not modified by Ctrl/Alt/Meta)
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey && e.code !== 'Space') {
+        activeStudyInput.focus();
+        return;
+      }
+    }
+
     // Space: flip / reveal card (only if not typing), or advance if next button is visible
     if (e.code === 'Space' && !isTyping) {
       e.preventDefault();

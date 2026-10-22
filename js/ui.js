@@ -337,7 +337,7 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
 
   container.innerHTML = `
     <div class="flashcard-wrapper" id="flashcard-wrapper">
-      <div class="flashcard" id="study-flashcard" tabindex="0" role="button" aria-label="${t('clickToFlip')}">
+      <div class="flashcard" id="study-flashcard">
         <!-- FRONT FACE -->
         <div class="flashcard-face flashcard-front">
           <div class="card-face-header">
@@ -530,12 +530,34 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
     playBackAudio();
   };
 
-  if (btnJustFlip) btnJustFlip.addEventListener('click', doFlip);
-
-  flashcardEl.addEventListener('click', (e) => {
-    if (e.target.closest('.audio-btn') || e.target.closest('#word-recall-box') || e.target.closest('#btn-just-flip') || e.target.closest('#pass-continue-bar')) return;
-    if (!isFlipped) doFlip();
+  if (btnJustFlip) btnJustFlip.addEventListener('click', (e) => {
+    e.stopPropagation();
+    doFlip();
   });
+
+  // Clicking on the front face focuses the active typing input instead of accidentally flipping
+  flashcardEl.addEventListener('click', (e) => {
+    if (e.target.closest('.audio-btn') || e.target.closest('#pass-continue-bar') || e.target.closest('#requeue-continue-bar')) return;
+    if (e.target.closest('#btn-just-flip')) {
+      doFlip();
+      return;
+    }
+    if (!isFlipped && recallInput) {
+      recallInput.focus();
+    }
+  });
+
+  // Auto-focus recall input immediately on card render
+  const focusWordRecallInput = () => {
+    if (!isFlipped && recallInput && document.activeElement !== recallInput) {
+      recallInput.focus();
+    }
+  };
+  focusWordRecallInput();
+  setTimeout(focusWordRecallInput, 50);
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(focusWordRecallInput);
+  }
 
   // Self-Evaluation Listeners (Path A)
   if (btnSelfRemembered) {
@@ -1115,6 +1137,18 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
       }
     });
   });
+
+  // Auto-focus definition textarea immediately on render
+  const focusDefInput = () => {
+    if (!evaluated && userInput && document.activeElement !== userInput) {
+      userInput.focus();
+    }
+  };
+  focusDefInput();
+  setTimeout(focusDefInput, 50);
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(focusDefInput);
+  }
 
   return {
     evaluate: doEvaluate,
