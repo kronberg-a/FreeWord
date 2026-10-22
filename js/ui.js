@@ -7,7 +7,7 @@
 import { t, getCurrentLanguage, SUPPORTED_LANGUAGES } from './i18n.js';
 import { RATING, STATUS, computeStats } from './srs.js';
 import { speakText } from './audio.js';
-import { evaluateDefinition, normalizeWord, hasFuzzyMatch } from './fuzzy.js';
+import { evaluateDefinition, evaluateWordAnswer, normalizeWord, hasFuzzyMatch } from './fuzzy.js';
 
 /**
  * Updates all DOM elements with i18n attributes
