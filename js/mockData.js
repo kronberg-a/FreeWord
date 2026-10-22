@@ -215,6 +215,23 @@ export const INITIAL_MOCK_CARDS = [
     status: "learning",
     createdAt: hoursAgo(140),
     lastReviewedDate: hoursAgo(30)
+  },
+  {
+    id: "card_def_7",
+    mode: "definition",
+    front: "il capolavoro",
+    back: "Opera eccellente o di sommo valore artistico o intellettuale realizzata da un autore.",
+    contextSentence: "La Divina Commedia è universalmente considerata il capolavoro della letteratura italiana.",
+    keyConcepts: ["opera", "eccellente", "sommo valore", "artistico", "autore"],
+    sourceLang: "it",
+    targetLang: "it",
+    interval: 1,
+    repetitions: 1,
+    easeFactor: 2.5,
+    nextReviewDate: hoursAgo(2), // Due today!
+    status: "learning",
+    createdAt: hoursAgo(100),
+    lastReviewedDate: hoursAgo(20)
   }
 ];
 

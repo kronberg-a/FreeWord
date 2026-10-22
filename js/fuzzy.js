@@ -4,9 +4,9 @@
  * Computes:
  * - Token Set Similarity (Jaccard Index)
  * - Normalized Levenshtein String Similarity
- * - Key Concept Extraction & Coverage
+ * - Multi-Token & Stemmed Key Concept Extraction & Coverage
  * - Hybrid Weighted Semantic Score (0-100%)
- * - Side-by-Side Highlighted Diff
+ * - Side-by-Side Highlighted Semantic Diff
  */
 
 // Common stop words for all 6 supported languages
@@ -75,16 +75,20 @@ export const STOP_WORDS = {
 };
 
 /**
- * Normalizes a word for comparison:
- * Lowercases, strips diacritics/accents where appropriate, removes punctuation.
+ * Normalizes a word or phrase for comparison:
+ * Lowercases, maps German ß to ss, strips diacritics where appropriate,
+ * splits elision apostrophes, and removes punctuation.
  */
 export function normalizeWord(word) {
   if (!word) return '';
   return word
     .toLowerCase()
+    .replace(/ß/g, 'ss')
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // remove accent marks for relaxed root matching
-    .replace(/[^\p{L}\p{N}]/gu, ''); // keep unicode letters and numbers
+    .replace(/[\u0300-\u036f]/g, '') // strip diacritics
+    .replace(/['’]/g, ' ')           // split apostrophes (e.g. l'amertume -> l amertume)
+    .replace(/[^\p{L}\p{N}\s]/gu, '') // keep letters, numbers and spaces
+    .trim();
 }
 
 /**
@@ -92,23 +96,20 @@ export function normalizeWord(word) {
  */
 export function tokenize(text, lang = 'en') {
   if (!text) return [];
-  const words = text
-    .toLowerCase()
-    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'«»„“”]/g, ' ')
+  const normalized = normalizeWord(text);
+  return normalized
     .split(/\s+/)
     .map(w => w.trim())
     .filter(w => w.length > 0);
-  return words;
 }
 
 /**
- * Strips stop words based on language (or all if not specified)
+ * Strips stop words based on language
  */
 export function filterContentWords(tokens, lang = 'en') {
   const stops = STOP_WORDS[lang] || STOP_WORDS.en;
   return tokens.filter(token => {
-    const norm = normalizeWord(token);
-    return norm.length > 1 && !stops.has(token) && !stops.has(norm);
+    return token.length > 1 && !stops.has(token);
   });
 }
 
@@ -141,46 +142,65 @@ export function levenshteinDistance(s1, s2) {
 }
 
 /**
- * Normalized string similarity (0 to 1) based on Levenshtein distance
+ * Normalized string similarity (0.0 to 1.0) based on Levenshtein distance
  */
 export function stringSimilarity(s1, s2) {
   const maxLen = Math.max(s1.length, s2.length);
   if (maxLen === 0) return 1.0;
   const dist = levenshteinDistance(s1, s2);
-  return 1.0 - dist / maxLen;
+  return Math.max(0, 1.0 - dist / maxLen);
 }
 
 /**
- * Finds if a token matches any token in a candidate list (exact or stem/edit-distance >= 0.8)
+ * Checks if a single word or multi-word term matches candidate tokens or text
  */
-export function hasFuzzyMatch(target, candidateList) {
-  const normTarget = normalizeWord(target);
-  if (!normTarget) return false;
+export function hasFuzzyMatch(target, candidateTokens, fullUserText = '') {
+  const cleanTarget = normalizeWord(target);
+  if (!cleanTarget) return false;
 
-  for (const cand of candidateList) {
-    const normCand = normalizeWord(cand);
-    if (!normCand) continue;
-    if (normTarget === normCand) return true;
-    // Prefix / stem match for inflections
-    if (normTarget.length >= 4 && normCand.length >= 4) {
-      if (normTarget.startsWith(normCand.slice(0, 4)) || normCand.startsWith(normTarget.slice(0, 4))) {
+  // 1. Multi-word phrase check in full text
+  if (cleanTarget.includes(' ')) {
+    if (fullUserText) {
+      const normFull = normalizeWord(fullUserText);
+      if (normFull.includes(cleanTarget)) return true;
+    }
+    // Also check if all sub-tokens of the target phrase are present in candidate tokens
+    const subWords = cleanTarget.split(/\s+/).filter(Boolean);
+    const allFound = subWords.every(sw => hasFuzzyMatch(sw, candidateTokens));
+    if (allFound) return true;
+  }
+
+  // 2. Unigram comparison
+  for (const cand of candidateTokens) {
+    const cleanCand = normalizeWord(cand);
+    if (!cleanCand) continue;
+    if (cleanTarget === cleanCand) return true;
+
+    // Stem / prefix matching for inflected forms (require minimum length 5)
+    if (cleanTarget.length >= 5 && cleanCand.length >= 5) {
+      const stemLen = Math.min(cleanTarget.length, cleanCand.length, 5);
+      if (cleanTarget.slice(0, stemLen) === cleanCand.slice(0, stemLen)) {
         return true;
       }
     }
+
     // Levenshtein similarity for typos
-    if (stringSimilarity(normTarget, normCand) >= 0.80) {
-      return true;
+    if (cleanTarget.length >= 4 && cleanCand.length >= 4) {
+      if (stringSimilarity(cleanTarget, cleanCand) >= 0.78) {
+        return true;
+      }
     }
   }
+
   return false;
 }
 
 /**
- * Extracts key concepts from text (non-stop words of substantial length)
+ * Extracts key concepts from reference text or returns user-specified key concepts
  */
 export function extractKeyConcepts(text, lang = 'en', manualConcepts = []) {
   if (manualConcepts && manualConcepts.length > 0) {
-    return manualConcepts.map(c => c.trim().toLowerCase()).filter(Boolean);
+    return manualConcepts.map(c => c.trim()).filter(Boolean);
   }
 
   const tokens = tokenize(text, lang);
@@ -188,7 +208,7 @@ export function extractKeyConcepts(text, lang = 'en', manualConcepts = []) {
   
   // Pick unique words of length >= 3
   const unique = Array.from(new Set(contentWords.filter(w => w.length >= 3)));
-  return unique;
+  return unique.slice(0, 8); // Top concepts
 }
 
 /**
@@ -206,15 +226,15 @@ export function evaluateDefinition(userText, refText, explicitKeyConcepts = [], 
   const userContent = filterContentWords(userTokens, lang);
   const refContent = filterContentWords(refTokens, lang);
 
-  // 1. Jaccard Index & Content Word Overlap
+  // 1. Content Word Overlap & Jaccard Index
   let matchedContentCount = 0;
-  const matchedUserIndices = new Set();
   const matchedRefIndices = new Set();
+  const matchedUserIndices = new Set();
 
   refContent.forEach((refWord, rIdx) => {
     let matched = false;
     userContent.forEach((userWord, uIdx) => {
-      if (hasFuzzyMatch(refWord, [userWord])) {
+      if (hasFuzzyMatch(refWord, [userWord], userText)) {
         matched = true;
         matchedUserIndices.add(uIdx);
       }
@@ -225,24 +245,26 @@ export function evaluateDefinition(userText, refText, explicitKeyConcepts = [], 
     }
   });
 
-  const contentCoverage = refContent.length > 0 ? (matchedContentCount / refContent.length) : (userContent.length > 0 ? 0.8 : 0);
+  const contentCoverage = refContent.length > 0 
+    ? (matchedContentCount / refContent.length) 
+    : (userContent.length > 0 ? 0.75 : 0);
 
   // Jaccard similarity: intersection / union of content tokens
   const unionCount = refContent.length + userContent.length - matchedContentCount;
-  const jaccard = unionCount > 0 ? matchedContentCount / unionCount : 1.0;
+  const jaccard = unionCount > 0 ? (matchedContentCount / unionCount) : 1.0;
 
   // 2. Levenshtein Full String Similarity
   const normUserStr = normalizeWord(userText);
   const normRefStr = normalizeWord(refText);
   const levSimilarity = stringSimilarity(normUserStr, normRefStr);
 
-  // 3. Key Concepts Evaluation
+  // 3. Key Concepts Evaluation (Supports Multi-word Concepts)
   const targetConcepts = extractKeyConcepts(refText, lang, explicitKeyConcepts);
   let matchedConceptsCount = 0;
   const conceptMatches = [];
 
   targetConcepts.forEach(concept => {
-    const isMatched = hasFuzzyMatch(concept, userTokens);
+    const isMatched = hasFuzzyMatch(concept, userTokens, userText);
     if (isMatched) matchedConceptsCount++;
     conceptMatches.push({ concept, matched: isMatched });
   });
@@ -256,8 +278,9 @@ export function evaluateDefinition(userText, refText, explicitKeyConcepts = [], 
   const rawScore = (conceptCoverage * 0.40) + (contentCoverage * 0.35) + (jaccard * 0.15) + (levSimilarity * 0.10);
   const scorePercent = Math.min(100, Math.max(0, Math.round(rawScore * 100)));
 
-  // Determine Classification Tier
-  let tier = 'divergent'; // < 50%
+  // Determine Classification Tier:
+  // Green: >= 75% Accurate, Amber: 50-74% Partial, Red: < 50% Divergent
+  let tier = 'divergent';
   let suggestedRating = 1; // Again
   let tierColor = 'var(--color-danger)';
 
@@ -301,35 +324,33 @@ export function generateSideBySideDiff(userText, refText, lang, keyConcepts = []
   const cleanRefTokens = refWords.map(w => normalizeWord(w));
 
   // Build Reference Highlights:
-  // Green if matched in user input, Amber/Red if missing key concept, normal otherwise
   const refTokensHtml = refWords.map((word, idx) => {
     const norm = cleanRefTokens[idx];
     const isStop = STOP_WORDS[lang]?.has(norm);
-    const isConcept = keyConcepts.some(c => hasFuzzyMatch(c, [norm]));
-    const isMatched = hasFuzzyMatch(norm, cleanUserTokens);
+    const isConcept = keyConcepts.some(c => hasFuzzyMatch(c, [norm], norm));
+    const isMatched = hasFuzzyMatch(norm, cleanUserTokens, userText);
 
     if (isMatched && !isStop) {
-      return `<mark class="diff-token match">${escapeHtml(word)}</mark>`;
+      return `<mark class="diff-token match" title="Matched key term">${escapeHtml(word)}</mark>`;
     } else if (!isMatched && isConcept) {
-      return `<mark class="diff-token missing-concept" title="Key concept missing">${escapeHtml(word)}</mark>`;
-    } else if (!isMatched && !isStop && norm.length > 3) {
-      return `<mark class="diff-token missing">${escapeHtml(word)}</mark>`;
+      return `<mark class="diff-token missing-concept" title="Missing essential concept">${escapeHtml(word)}</mark>`;
+    } else if (!isMatched && !isStop && norm.length > 2) {
+      return `<mark class="diff-token missing" title="Missing reference word">${escapeHtml(word)}</mark>`;
     } else {
       return `<span class="diff-token neutral">${escapeHtml(word)}</span>`;
     }
   }).join(' ');
 
   // Build User Highlights:
-  // Green if matched reference, Amber/Dim if extra fluff or stop word
   const userTokensHtml = userWords.map((word, idx) => {
     const norm = cleanUserTokens[idx];
     const isStop = STOP_WORDS[lang]?.has(norm);
-    const isMatched = hasFuzzyMatch(norm, cleanRefTokens);
+    const isMatched = hasFuzzyMatch(norm, cleanRefTokens, refText);
 
     if (isMatched && !isStop) {
-      return `<mark class="diff-token match">${escapeHtml(word)}</mark>`;
+      return `<mark class="diff-token match" title="Accurately matched">${escapeHtml(word)}</mark>`;
     } else if (!isMatched && !isStop && norm.length > 2) {
-      return `<mark class="diff-token extra" title="Extra / Unmatched term">${escapeHtml(word)}</mark>`;
+      return `<mark class="diff-token extra" title="Extra / Unmatched explanation">${escapeHtml(word)}</mark>`;
     } else {
       return `<span class="diff-token neutral">${escapeHtml(word)}</span>`;
     }
@@ -343,7 +364,7 @@ export function generateSideBySideDiff(userText, refText, lang, keyConcepts = []
 
 function escapeHtml(str) {
   if (!str) return '';
-  return str
+  return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

@@ -120,12 +120,12 @@
   font-weight: 600;
 }
 
-/* Quick Stats Badge */
+/* Quick Stats Badge (Due / New / Mastered) */
 .header-stats-badge {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 4px 12px;
   background-color: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-pill);
@@ -134,10 +134,22 @@
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   transition: all var(--transition-fast);
+  white-space: nowrap;
 }
 
 .header-stats-badge:hover {
   border-color: var(--accent-primary);
+}
+
+.stat-pill-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.stat-pill-dot {
+  color: var(--border-color);
+  font-weight: 700;
 }
 
 .stat-pill-due {
@@ -145,8 +157,30 @@
   font-weight: 700;
 }
 
-.stat-pill-total {
-  color: var(--text-muted);
+.stat-pill-new {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.stat-pill-mastered {
+  color: var(--color-success);
+  font-weight: 700;
+}
+
+.dashboard-pair-select {
+  padding: 3px 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.dashboard-pair-select:hover {
+  border-color: var(--accent-primary);
 }
 
 /* Controls (Theme, Language) */
@@ -215,6 +249,13 @@
     padding-bottom: 72px;
   }
   .header-stats-badge {
+    padding: 3px 8px;
+    font-size: 0.72rem;
+  }
+  .header-stats-badge .stat-pill-item:not(:first-child) {
+    display: none;
+  }
+  .header-stats-badge .stat-pill-dot {
     display: none;
   }
 }

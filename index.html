@@ -46,9 +46,13 @@
 
         <!-- Header Right: Quick Stats & Controls -->
         <div class="header-right">
-          <div class="header-stats-badge" id="header-stats-badge" title="Due today / Total cards in deck">
-            <span><span class="stat-pill-due" id="header-due-count">0</span> <span data-i18n="dueToday">Due</span></span>
-            <span class="stat-pill-total">/ <span id="header-total-count">0</span></span>
+          <!-- Quick Stats Pill (Due / New / Mastered) -->
+          <div class="header-stats-badge" id="header-stats-badge" title="Due / New / Mastered">
+            <span class="stat-pill-item"><span class="stat-pill-due" id="header-due-count">0</span> Due</span>
+            <span class="stat-pill-dot">·</span>
+            <span class="stat-pill-item"><span class="stat-pill-new" id="header-new-count">0</span> New</span>
+            <span class="stat-pill-dot">·</span>
+            <span class="stat-pill-item"><span class="stat-pill-mastered" id="header-mastered-count">0</span> Mastered</span>
           </div>
 
           <!-- Theme Toggle Button -->
@@ -79,11 +83,19 @@
           <!-- Main Deck Action Panel -->
           <div class="card-panel deck-hero">
             <div class="deck-hero-content">
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span class="badge badge-new" id="dashboard-active-mode-badge">Words Mode</span>
-                <span id="dashboard-lang-pair-label" style="font-size: 0.8rem; color: var(--text-muted);">All Languages</span>
+              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="badge badge-new" id="dashboard-active-mode-badge">Words Mode</span>
+                </div>
+                <!-- Language Pair Filter -->
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <select id="dashboard-pair-select" class="dashboard-pair-select" aria-label="Select Study Language Pair">
+                    <option value="all">All Language Pairs</option>
+                  </select>
+                </div>
               </div>
-              <h2 id="dashboard-hero-title">Ready for your spaced review?</h2>
+
+              <h2 id="dashboard-hero-title" data-i18n="readyToReview">Ready for your spaced review?</h2>
               <p id="dashboard-hero-subtitle" data-i18n="wordsModeDesc">Flashcard & typing vocabulary drills with spaced repetition intervals.</p>
               
               <!-- Progress Bar -->
@@ -289,7 +301,7 @@
           <div class="settings-row">
             <div class="settings-info">
               <h4 data-i18n="dailyNewLimit">Daily New Cards Limit</h4>
-              <p>Maximum number of unstudied cards introduced per daily session.</p>
+              <p data-i18n="dailyNewLimitDesc">Maximum number of unstudied cards introduced per daily session.</p>
             </div>
             <div class="settings-ctrl">
               <input type="number" id="setting-daily-new" class="form-input" min="1" max="200" value="20">
@@ -299,7 +311,7 @@
           <div class="settings-row">
             <div class="settings-info">
               <h4 data-i18n="dailyReviewLimit">Daily Max Reviews Limit</h4>
-              <p>Cap on the number of due cards presented per day.</p>
+              <p data-i18n="dailyReviewLimitDesc">Cap on the number of due cards presented per day.</p>
             </div>
             <div class="settings-ctrl">
               <input type="number" id="setting-daily-reviews" class="form-input" min="5" max="500" value="50">
@@ -309,7 +321,7 @@
           <div class="settings-row">
             <div class="settings-info">
               <h4 data-i18n="defaultSourceLang">Default Study Language</h4>
-              <p>Default source language when creating new study cards.</p>
+              <p data-i18n="defaultSourceLangDesc">Default source language when creating new study cards.</p>
             </div>
             <div class="settings-ctrl">
               <select id="setting-default-source" class="form-select">
@@ -326,7 +338,7 @@
           <div class="settings-row">
             <div class="settings-info">
               <h4 data-i18n="defaultTargetLang">Default Translation Language</h4>
-              <p>Default target native language for translations and definitions.</p>
+              <p data-i18n="defaultTargetLangDesc">Default target native language for translations and definitions.</p>
             </div>
             <div class="settings-ctrl">
               <select id="setting-default-target" class="form-select">
@@ -347,7 +359,7 @@
           <div class="settings-row">
             <div class="settings-info">
               <h4 data-i18n="exportDataBtn">Export All Data (JSON)</h4>
-              <p>Download a complete local backup of all cards, logs, and settings.</p>
+              <p data-i18n="exportDataDesc">Download a complete local backup of all cards, logs, and settings.</p>
             </div>
             <div class="settings-ctrl">
               <button type="button" class="btn btn-secondary" id="btn-export-json" data-i18n="exportDataBtn">Export JSON</button>
@@ -357,7 +369,7 @@
           <div class="settings-row">
             <div class="settings-info">
               <h4 data-i18n="importDataBtn">Import Data (JSON)</h4>
-              <p>Restore or merge deck cards from a JSON backup file.</p>
+              <p data-i18n="importDataDesc">Restore or merge deck cards from a JSON backup file.</p>
             </div>
             <div class="settings-ctrl">
               <input type="file" id="import-file-input" accept=".json" class="hidden">
@@ -368,7 +380,7 @@
           <div class="settings-row">
             <div class="settings-info">
               <h4 data-i18n="resetAllDataBtn" style="color: var(--color-danger);">Reset to Default Seed Data</h4>
-              <p>Restore original sample cards and wipe custom deck history.</p>
+              <p data-i18n="resetAllDataDesc">Restore original sample cards and wipe custom deck history.</p>
             </div>
             <div class="settings-ctrl">
               <button type="button" class="btn btn-danger" id="btn-reset-seed" data-i18n="resetAllDataBtn">Reset All Data</button>
@@ -397,7 +409,7 @@
         <!-- Duplicate warning alert -->
         <div class="duplicate-alert hidden" id="card-duplicate-alert">
           <span>⚠️</span>
-          <span id="duplicate-alert-text" data-i18n="duplicateWarning">Warning: This term already exists in your deck!</span>
+          <span id="duplicate-alert-text" data-i18n="duplicateWarning">Warning: This term already exists in your deck for this mode!</span>
         </div>
 
         <form id="card-edit-form">
@@ -451,7 +463,13 @@
 
           <!-- Definition Field (shown in Definition mode) -->
           <div class="form-group hidden" id="group-form-definition">
-            <label class="form-label" for="card-form-back-def" data-i18n="fieldDefinition">Target Definition</label>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" for="card-form-back-def" data-i18n="fieldDefinition" style="margin-bottom: 0;">Target Definition</label>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-translate-def" style="padding: 2px 8px; font-size: 0.75rem;">
+                <span>🌐</span>
+                <span data-i18n="translateDefinitionBtn">Translate Definition</span>
+              </button>
+            </div>
             <textarea id="card-form-back-def" class="form-textarea" data-i18n-placeholder="fieldDefinitionPlaceholder" placeholder="Accurate written explanation of the term..."></textarea>
           </div>
 

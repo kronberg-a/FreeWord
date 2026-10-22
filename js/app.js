@@ -18,6 +18,7 @@ import {
 const state = {
   currentView: 'dashboard', // 'dashboard' | 'study' | 'library' | 'stats' | 'settings'
   activeMode: 'word',        // 'word' | 'definition'
+  selectedPair: 'all',      // 'all' or 'en-es', 'de-ru', etc.
   theme: 'dark',
   studyQueue: [],
   studyIndex: 0,
@@ -34,6 +35,7 @@ function initApp() {
 
   const settings = getSettings();
   state.activeMode = settings.activeMode || 'word';
+  state.selectedPair = settings.selectedLanguagePair || 'all';
   state.theme = settings.theme || 'dark';
 
   // Apply Theme
@@ -175,11 +177,15 @@ function refreshCurrentView() {
   const cards = getCards();
   const logs = getReviewLogs();
 
-  updateHeaderStats(cards, logs);
+  updateHeaderStats(cards, logs, state.activeMode, state.selectedPair);
 
   switch (state.currentView) {
     case 'dashboard':
-      renderDashboard(cards, logs, state.activeMode);
+      renderDashboard(cards, logs, state.activeMode, state.selectedPair, (newPair) => {
+        state.selectedPair = newPair;
+        updateSettings({ selectedLanguagePair: newPair });
+        refreshCurrentView();
+      });
       break;
 
     case 'library':
@@ -195,7 +201,7 @@ function refreshCurrentView() {
       break;
 
     case 'study':
-      // Study view maintains its own queue state
+      // Maintained by study flow
       break;
   }
 }
@@ -223,24 +229,34 @@ function startStudySession() {
   const cards = getCards();
   const settings = getSettings();
 
-  // Build review queue for current mode
+  // Build review queue for current mode & language pair
   const queue = buildStudyQueue(cards, {
     mode: state.activeMode,
+    pair: state.selectedPair,
     dailyNewLimit: parseInt(settings.dailyNewLimit, 10) || 20,
     dailyReviewLimit: parseInt(settings.dailyReviewLimit, 10) || 50
   });
 
   if (queue.length === 0) {
-    // If no cards are due in current mode, check if there are any cards at all
-    const modeCards = cards.filter(c => c.mode === state.activeMode);
+    // Check if there are cards matching active mode & pair
+    const modeCards = cards.filter(c => {
+      if (c.mode !== state.activeMode) return false;
+      if (state.selectedPair !== 'all') {
+        const pair = `${c.sourceLang}-${c.targetLang}`;
+        if (pair !== state.selectedPair) return false;
+      }
+      return true;
+    });
+
     if (modeCards.length === 0) {
       showToast(t('noCardsFound'));
       openCardModal(null, state.activeMode);
       return;
     } else {
-      showToast(t('noReviewsDue'));
-      // Offer to review all available cards anyway
-      state.studyQueue = modeCards.slice(0, 10);
+      // Early Practice Ahead: pick up to 10 cards sorted by earliest review date
+      showToast(t('allCaughtUp') + ' (' + t('practiceAheadBtn') + ')');
+      const sortedAhead = [...modeCards].sort((a, b) => new Date(a.nextReviewDate) - new Date(b.nextReviewDate));
+      state.studyQueue = sortedAhead.slice(0, 10);
     }
   } else {
     state.studyQueue = queue;
@@ -330,7 +346,7 @@ function setupGlobalKeyboardShortcuts() {
     if (state.currentView !== 'study') return;
     if (!state.studyController) return;
 
-    // Space: flip card in word mode
+    // Space: flip card in word mode (only if not typing in recall field)
     if (e.code === 'Space' && !isTyping) {
       e.preventDefault();
       if (state.studyController.flip) {
@@ -374,7 +390,7 @@ function setupLibraryListeners() {
   const addItemBtn = document.getElementById('btn-library-add-item');
 
   if (searchInput) {
-    searchInput.addEventListener('input', debounce(applyLibraryFilters, 250));
+    searchInput.addEventListener('input', debounce(applyLibraryFilters, 200));
   }
 
   if (modeSelect) modeSelect.addEventListener('change', applyLibraryFilters);
@@ -418,7 +434,7 @@ function applyLibraryFilters() {
         resetCardSRS(cardId);
         showToast(t('resetSRS') + ' ✓');
         applyLibraryFilters();
-        updateHeaderStats(getCards(), getReviewLogs());
+        updateHeaderStats(getCards(), getReviewLogs(), state.activeMode, state.selectedPair);
       }
     },
     onDelete: (cardId) => {
@@ -426,7 +442,7 @@ function applyLibraryFilters() {
         deleteCard(cardId);
         showToast(t('deleteCard') + ' ✓');
         applyLibraryFilters();
-        updateHeaderStats(getCards(), getReviewLogs());
+        updateHeaderStats(getCards(), getReviewLogs(), state.activeMode, state.selectedPair);
       }
     }
   });
@@ -443,6 +459,7 @@ function setupModalListeners() {
   const tabWord = document.getElementById('modal-tab-word');
   const tabDef = document.getElementById('modal-tab-def');
   const autoTranslateBtn = document.getElementById('btn-auto-translate');
+  const translateDefBtn = document.getElementById('btn-translate-def');
   const termInput = document.getElementById('card-form-front');
   const sourceLangSelect = document.getElementById('card-form-source-lang');
 
@@ -456,12 +473,13 @@ function setupModalListeners() {
   tabWord.addEventListener('click', () => setModalMode('word'));
   tabDef.addEventListener('click', () => setModalMode('definition'));
 
-  // Duplicate detection listener
+  // Duplicate detection listener (scoped strictly to current modal mode)
   const checkDup = debounce(() => {
     const term = termInput.value.trim();
     const sourceLang = sourceLangSelect.value;
+    const mode = document.getElementById('card-form-mode').value;
     const cards = getCards();
-    const duplicate = checkDuplicate(cards, term, sourceLang, state.editingCardId);
+    const duplicate = checkDuplicate(cards, term, sourceLang, mode, state.editingCardId);
     
     const alertEl = document.getElementById('card-duplicate-alert');
     if (alertEl) {
@@ -471,12 +489,12 @@ function setupModalListeners() {
         alertEl.classList.add('hidden');
       }
     }
-  }, 300);
+  }, 250);
 
   termInput.addEventListener('input', checkDup);
   sourceLangSelect.addEventListener('change', checkDup);
 
-  // Auto-Translate Button
+  // Auto-Translate Term Button
   autoTranslateBtn.addEventListener('click', async () => {
     const term = termInput.value.trim();
     if (!term) {
@@ -507,15 +525,43 @@ function setupModalListeners() {
         }
       }
 
-      showToast(`Translated (${result.provider})`);
+      showToast(`${t('autoTranslateBtn')} (${result.provider})`);
     } catch (err) {
       console.error(err);
-      showToast('Translation failed');
+      showToast('Translation error');
     } finally {
       if (spinner) spinner.classList.add('hidden');
       autoTranslateBtn.disabled = false;
     }
   });
+
+  // Auto-Translate Definition Button (Translates the written definition directly)
+  if (translateDefBtn) {
+    translateDefBtn.addEventListener('click', async () => {
+      const defField = document.getElementById('card-form-back-def');
+      const textToTranslate = defField ? defField.value.trim() : '';
+      if (!textToTranslate) {
+        if (defField) defField.focus();
+        return;
+      }
+
+      const sourceLang = sourceLangSelect.value;
+      const targetLang = document.getElementById('card-form-target-lang').value;
+
+      translateDefBtn.disabled = true;
+      try {
+        const result = await translateText(textToTranslate, targetLang, sourceLang);
+        if (result && result.translation) {
+          defField.value = result.translation;
+          showToast(`${t('translateDefinitionBtn')} ✓`);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        translateDefBtn.disabled = false;
+      }
+    });
+  }
 
   // Save Card
   saveBtn.addEventListener('click', handleSaveCard);
@@ -541,6 +587,15 @@ function setModalMode(mode) {
     grpTrans.classList.add('hidden');
     grpDef.classList.remove('hidden');
     grpConcepts.classList.remove('hidden');
+  }
+
+  // Re-run duplicate check for the new mode
+  const termInput = document.getElementById('card-form-front');
+  const sourceLangSelect = document.getElementById('card-form-source-lang');
+  const alertEl = document.getElementById('card-duplicate-alert');
+  if (termInput && sourceLangSelect && alertEl) {
+    const duplicate = checkDuplicate(getCards(), termInput.value.trim(), sourceLangSelect.value, mode, state.editingCardId);
+    alertEl.classList.toggle('hidden', !duplicate);
   }
 }
 
@@ -610,13 +665,16 @@ function handleSaveCard(e) {
   const contextSentence = document.getElementById('card-form-context').value.trim();
 
   if (!front) {
-    alert('Please enter a target word or term.');
+    showToast(t('pleaseEnterTerm'));
+    document.getElementById('card-form-front').focus();
     return;
   }
 
   const back = mode === 'word' ? backWord : backDef;
   if (!back) {
-    alert(mode === 'word' ? 'Please enter a translation.' : 'Please enter a definition.');
+    showToast(mode === 'word' ? t('pleaseEnterTranslation') : t('pleaseEnterDefinition'));
+    const field = mode === 'word' ? document.getElementById('card-form-back-word') : document.getElementById('card-form-back-def');
+    if (field) field.focus();
     return;
   }
 
@@ -691,7 +749,7 @@ function setupSettingsListeners() {
       a.download = `freeword_backup_${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast('Export completed ✓');
+      showToast(t('exportCompleted'));
     });
   }
 
@@ -721,7 +779,7 @@ function setupSettingsListeners() {
     resetBtn.addEventListener('click', () => {
       if (confirm(t('confirmResetAll'))) {
         resetToSeedData();
-        showToast('Reset to default seed data ✓');
+        showToast(t('resetCompleted'));
         refreshCurrentView();
       }
     });

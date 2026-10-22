@@ -99,16 +99,23 @@ FreeWord is optimized for rapid hands-on-keyboard study:
 
 ```
 FreeWord/
+├── .agents/
+│   ├── coder/
+│   │   └── SKILL.md         # Senior Full-Stack Implementation Engineer skill definition
+│   └── designer/
+│       ├── SKILL.md         # Principal UX/UI Critic & Logic Auditor skill definition
+│       └── AUDIT.md         # Structured UX/UI & logic critique checklist
 ├── index.html               # Semantic SPA markup with accessible modals and views
 ├── css/
-│   ├── base.css             # Theme variables (light/dark), reset, typography
+│   ├── base.css             # Theme variables (light/dark, WCAG AA contrast), typography
 │   ├── layout.css           # Header, navigation, layout grids, responsiveness
 │   ├── components.css       # Buttons, badges, forms, modals, progress bars
-│   ├── flashcard.css        # 3D card flip animation, audio button, ratings bar
+│   ├── flashcard.css        # 3D card flip animation, audio button, recall typing variant
 │   ├── definition.css       # Definition textarea, score pill, side-by-side diff
 │   └── browser.css          # Search toolbar, filter selects, data tables, charts
 └── js/
     ├── app.js               # Application orchestrator, state manager, shortcuts
+    ├── ui.js                # View rendering, DOM updates, toast notifications
     ├── srs.js               # SM-2 Spaced Repetition engine, queue & analytics logic
     ├── i18n.js              # Localization dictionaries for EN, RU, DE, FR, IT, ES
     ├── fuzzy.js             # Multi-language tokenizer, stop words, Levenshtein & diff

@@ -5,7 +5,7 @@
 import { t, getCurrentLanguage, setLanguage, SUPPORTED_LANGUAGES } from './i18n.js';
 import { RATING, STATUS, computeStats } from './srs.js';
 import { speakText, isAudioSupported } from './audio.js';
-import { evaluateDefinition } from './fuzzy.js';
+import { evaluateDefinition, normalizeWord, hasFuzzyMatch } from './fuzzy.js';
 
 /**
  * Updates all DOM elements with i18n attributes
@@ -30,7 +30,7 @@ export function applyI18n() {
 /**
  * Displays a lightweight toast message
  */
-export function showToast(message, duration = 3000) {
+export function showToast(message, duration = 2800) {
   const container = document.getElementById('toast-container');
   if (!container) return;
 
@@ -47,22 +47,27 @@ export function showToast(message, duration = 3000) {
 }
 
 /**
- * Updates Header Quick Stats badge
+ * Updates Header Quick Stats pill with Due / New / Mastered breakdown for active mode
  */
-export function updateHeaderStats(cards, logs) {
-  const stats = computeStats(cards, logs);
-  const dueEl = document.getElementById('header-due-count');
-  const totalEl = document.getElementById('header-total-count');
+export function updateHeaderStats(cards, logs, activeMode = 'word', selectedPair = 'all') {
+  const stats = computeStats(cards, logs, { mode: activeMode, pair: selectedPair });
+  const badge = document.getElementById('header-stats-badge');
+  if (!badge) return;
 
-  if (dueEl) dueEl.textContent = stats.dueTodayCount;
-  if (totalEl) totalEl.textContent = stats.totalCards;
+  badge.innerHTML = `
+    <span class="stat-pill-item"><span class="stat-pill-due">${stats.dueTodayCount}</span> ${t('headerDue')}</span>
+    <span class="stat-pill-dot">·</span>
+    <span class="stat-pill-item"><span class="stat-pill-new">${stats.newCount}</span> ${t('headerNew')}</span>
+    <span class="stat-pill-dot">·</span>
+    <span class="stat-pill-item"><span class="stat-pill-mastered">${stats.masteredCount}</span> ${t('headerMastered')}</span>
+  `;
 }
 
 /**
  * Renders the Dashboard overview cards, progress bars and quick stats
  */
-export function renderDashboard(cards, logs, activeMode = 'word') {
-  const stats = computeStats(cards, logs, { mode: activeMode });
+export function renderDashboard(cards, logs, activeMode = 'word', selectedPair = 'all', onPairChange = null) {
+  const stats = computeStats(cards, logs, { mode: activeMode, pair: selectedPair });
   
   // Update hero texts based on mode
   const modeBadge = document.getElementById('dashboard-active-mode-badge');
@@ -73,6 +78,49 @@ export function renderDashboard(cards, logs, activeMode = 'word') {
   }
   if (heroSubtitle) {
     heroSubtitle.textContent = activeMode === 'word' ? t('wordsModeDesc') : t('definitionsModeDesc');
+  }
+
+  // Populate or update Language Pair Dropdown
+  const pairSelect = document.getElementById('dashboard-pair-select');
+  if (pairSelect) {
+    // Extract unique language pairs for active mode
+    const modeCards = cards.filter(c => c.mode === activeMode);
+    const pairs = new Set();
+    modeCards.forEach(c => pairs.add(`${c.sourceLang}-${c.targetLang}`));
+
+    const pairList = Array.from(pairs).sort();
+    let optionsHtml = `<option value="all">${t('filterAllPairs')}</option>`;
+    pairList.forEach(p => {
+      const [src, tgt] = p.split('-');
+      optionsHtml += `<option value="${p}" ${p === selectedPair ? 'selected' : ''}>${src.toUpperCase()} → ${tgt.toUpperCase()}</option>`;
+    });
+
+    pairSelect.innerHTML = optionsHtml;
+    pairSelect.value = selectedPair;
+
+    pairSelect.onchange = (e) => {
+      if (onPairChange) onPairChange(e.target.value);
+    };
+  }
+
+  // Update Hero Title and CTA based on due count
+  const heroTitle = document.getElementById('dashboard-hero-title');
+  const startBtn = document.getElementById('btn-start-review');
+  const startBtnText = document.getElementById('btn-start-review-text');
+  const dueBadge = document.getElementById('btn-due-count-badge');
+
+  if (stats.dueTodayCount === 0) {
+    if (heroTitle) heroTitle.textContent = t('allCaughtUp');
+    if (startBtnText) startBtnText.textContent = t('practiceAheadBtn');
+    if (dueBadge) dueBadge.textContent = '0';
+    if (startBtn) startBtn.classList.remove('btn-primary');
+    if (startBtn) startBtn.classList.add('btn-secondary');
+  } else {
+    if (heroTitle) heroTitle.textContent = t('readyToReview');
+    if (startBtnText) startBtnText.textContent = t('startReviewBtn');
+    if (dueBadge) dueBadge.textContent = String(stats.dueTodayCount);
+    if (startBtn) startBtn.classList.add('btn-primary');
+    if (startBtn) startBtn.classList.remove('btn-secondary');
   }
 
   // Update Progress Bar
@@ -103,10 +151,6 @@ export function renderDashboard(cards, logs, activeMode = 'word') {
   if (lRev) lRev.textContent = `${t('statReview')}: ${stats.reviewCount}`;
   if (lMast) lMast.textContent = `${t('statMastered')}: ${stats.masteredCount}`;
 
-  // CTA Button due count badge
-  const dueBadge = document.getElementById('btn-due-count-badge');
-  if (dueBadge) dueBadge.textContent = stats.dueTodayCount;
-
   // Stat Boxes
   const dueBox = document.getElementById('stat-due-today');
   const totalBox = document.getElementById('stat-total-cards');
@@ -120,7 +164,8 @@ export function renderDashboard(cards, logs, activeMode = 'word') {
 }
 
 /**
- * Renders the Study screen for Word Mode (Flashcard with 3D Flip)
+ * Renders the Study screen for Word Mode
+ * Supports BOTH pure flashcard flipping AND active recall typing variant!
  */
 export function renderWordStudyCard(card, index, total, callbacks = {}) {
   const container = document.getElementById('study-active-area');
@@ -142,7 +187,7 @@ export function renderWordStudyCard(card, index, total, callbacks = {}) {
 
   container.innerHTML = `
     <div class="flashcard-wrapper" id="flashcard-wrapper">
-      <div class="flashcard" id="study-flashcard" tabindex="0" role="button" aria-label="Flashcard. Click or press Space to flip.">
+      <div class="flashcard" id="study-flashcard" tabindex="0" role="button" aria-label="${t('clickToFlip')}">
         <!-- FRONT FACE -->
         <div class="flashcard-face flashcard-front">
           <div class="card-face-header">
@@ -151,12 +196,20 @@ export function renderWordStudyCard(card, index, total, callbacks = {}) {
               🔊
             </button>
           </div>
+          
           <div class="card-center-prompt">
             <h1 class="card-term">${escapeHtml(card.front)}</h1>
-            <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 8px;">
-              ${escapeHtml(card.contextSentence ? '“' + card.contextSentence + '”' : '')}
+            ${card.contextSentence ? `
+              <div class="card-context-quote" style="margin-top: 12px;">“${escapeHtml(card.contextSentence)}”</div>
+            ` : ''}
+            
+            <!-- Optional Active Recall Typing Variant -->
+            <div class="word-recall-box" id="word-recall-box" onclick="event.stopPropagation();">
+              <input type="text" id="word-recall-input" class="word-recall-input" placeholder="${t('recallPlaceholder')}" autocomplete="off" spellcheck="false">
+              <button type="button" id="word-recall-check-btn" class="btn btn-secondary btn-sm">${t('checkRecallBtn')}</button>
             </div>
           </div>
+
           <div class="card-face-footer">
             <span>${t('clickToFlip')} (${t('pressSpaceToFlip')})</span>
           </div>
@@ -170,19 +223,26 @@ export function renderWordStudyCard(card, index, total, callbacks = {}) {
               🔊
             </button>
           </div>
+          
           <div class="card-center-prompt">
             <div style="font-size: 1.1rem; color: var(--text-muted); margin-bottom: 4px;">${escapeHtml(card.front)}</div>
             <div class="card-translation-reveal">${escapeHtml(card.back)}</div>
-            ${card.contextSentence ? `<div class="card-context-quote">“${escapeHtml(card.contextSentence)}”</div>` : ''}
+            
+            <!-- Recall Check Feedback Banner (if user typed) -->
+            <div id="recall-feedback-banner" class="recall-feedback-banner hidden"></div>
+            
+            ${card.contextSentence ? `<div class="card-context-quote" style="margin-top: 12px;">“${escapeHtml(card.contextSentence)}”</div>` : ''}
           </div>
+
           <div class="card-face-footer">
             <span class="badge badge-${card.status}">${t(`status${capitalize(card.status)}`)}</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted);">EF: ${Number(card.easeFactor || 2.5).toFixed(2)}</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Rating Buttons Bar (Hidden initially, shown when flipped or submitted) -->
+    <!-- Rating Buttons Bar (Hidden initially, shown when flipped) -->
     <div class="srs-ratings-bar hidden" id="study-ratings-bar">
       <button type="button" class="rating-btn again" data-rating="1" title="Shortcut: 1">
         <span class="rating-label">${t('ratingAgain')}</span>
@@ -209,22 +269,57 @@ export function renderWordStudyCard(card, index, total, callbacks = {}) {
 
   const flashcardEl = document.getElementById('study-flashcard');
   const ratingsBar = document.getElementById('study-ratings-bar');
+  const recallInput = document.getElementById('word-recall-input');
+  const recallCheckBtn = document.getElementById('word-recall-check-btn');
+  const feedbackBanner = document.getElementById('recall-feedback-banner');
 
-  // Flip logic
   let isFlipped = false;
-  const doFlip = () => {
-    isFlipped = !isFlipped;
-    flashcardEl.classList.toggle('flipped', isFlipped);
-    if (isFlipped) {
-      ratingsBar.classList.remove('hidden');
+
+  const doFlip = (typedText = '') => {
+    isFlipped = true;
+    flashcardEl.classList.add('flipped');
+    ratingsBar.classList.remove('hidden');
+
+    if (typedText && feedbackBanner) {
+      const cleanTyped = normalizeWord(typedText);
+      const cleanBack = normalizeWord(card.back);
+      const backTokens = cleanBack.split(/\s+/);
+      const isMatch = cleanBack.includes(cleanTyped) || hasFuzzyMatch(cleanTyped, backTokens, card.back);
+
+      feedbackBanner.classList.remove('hidden');
+      if (isMatch) {
+        feedbackBanner.className = 'recall-feedback-banner match-good';
+        feedbackBanner.textContent = `✓ ${t('matchCorrect')} ("${typedText}")`;
+      } else {
+        feedbackBanner.className = 'recall-feedback-banner match-divergent';
+        feedbackBanner.textContent = `"${typedText}" → ${t('matchDivergent')}`;
+      }
     }
   };
 
   flashcardEl.addEventListener('click', (e) => {
-    // Avoid flipping if user clicked the audio button
-    if (e.target.closest('.audio-btn')) return;
-    doFlip();
+    if (e.target.closest('.audio-btn') || e.target.closest('#word-recall-box')) return;
+    if (!isFlipped) doFlip();
   });
+
+  // Active recall typing submit
+  const handleRecallSubmit = () => {
+    const text = recallInput ? recallInput.value.trim() : '';
+    doFlip(text);
+  };
+
+  if (recallCheckBtn) {
+    recallCheckBtn.addEventListener('click', handleRecallSubmit);
+  }
+
+  if (recallInput) {
+    recallInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleRecallSubmit();
+      }
+    });
+  }
 
   // Audio pronunciation listeners
   const playAudio = async (btn) => {
@@ -247,14 +342,14 @@ export function renderWordStudyCard(card, index, total, callbacks = {}) {
   });
 
   return {
-    flip: doFlip,
+    flip: () => { if (!isFlipped) doFlip(); },
     speak: () => playAudio(frontAudioBtn),
     isFlipped: () => isFlipped
   };
 }
 
 /**
- * Renders the Study screen for Definition Practice Mode (Recall with Fuzzy Evaluation)
+ * Renders the Study screen for Definition Practice Mode
  */
 export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
   const container = document.getElementById('study-active-area');
@@ -277,13 +372,17 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
   container.innerHTML = `
     <div class="definition-card">
       <div class="definition-header">
-        <span class="card-lang-tag">${langCode.toUpperCase()} DEFINITION PRACTICE</span>
+        <span class="card-lang-tag">${langCode.toUpperCase()} ${t('defPracticeHeader')}</span>
         <button type="button" class="audio-btn" id="def-audio-btn" title="${t('pronounceWord')}">🔊</button>
       </div>
 
       <div class="definition-prompt-box">
         <h1 class="definition-term">${escapeHtml(card.front)}</h1>
-        ${card.contextSentence ? `<div style="font-size: 0.9rem; font-style: italic; color: var(--text-muted); margin-top: 4px;">Context: “${escapeHtml(card.contextSentence)}”</div>` : ''}
+        ${card.contextSentence ? `
+          <div style="font-size: 0.9rem; font-style: italic; color: var(--text-muted); margin-top: 6px;">
+            ${t('contextLabel')}: “${escapeHtml(card.contextSentence)}”
+          </div>
+        ` : ''}
       </div>
 
       <!-- User Active Typing Area -->
@@ -297,10 +396,10 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
         </div>
       </div>
 
-      <!-- Fuzzy Evaluation Results Box (Injected after submit) -->
+      <!-- Fuzzy Evaluation Results Box -->
       <div id="def-eval-container" class="hidden"></div>
 
-      <!-- Ratings Toolbar (Injected after submit) -->
+      <!-- Ratings Toolbar -->
       <div class="srs-ratings-bar hidden" id="def-ratings-bar">
         <button type="button" class="rating-btn again" data-rating="1">
           <span class="rating-label">${t('ratingAgain')}</span>
@@ -309,17 +408,17 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
         </button>
         <button type="button" class="rating-btn hard" data-rating="2">
           <span class="rating-label">${t('ratingHard')}</span>
-          <span class="rating-hint">Hard</span>
+          <span class="rating-hint">${t('ratingHard')}</span>
           <span class="rating-key-badge">2</span>
         </button>
         <button type="button" class="rating-btn good" data-rating="3">
           <span class="rating-label">${t('ratingGood')}</span>
-          <span class="rating-hint">Good</span>
+          <span class="rating-hint">${t('ratingGood')}</span>
           <span class="rating-key-badge">3</span>
         </button>
         <button type="button" class="rating-btn easy" data-rating="4">
           <span class="rating-label">${t('ratingEasy')}</span>
-          <span class="rating-hint">Easy</span>
+          <span class="rating-hint">${t('ratingEasy')}</span>
           <span class="rating-key-badge">4</span>
         </button>
       </div>
@@ -363,7 +462,9 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
     ratingsBar.classList.remove('hidden');
 
     const tierClass = `score-${evalResult.tier}`;
-    const tierLabel = evalResult.tier === 'accurate' ? t('evalAccurate') : (evalResult.tier === 'partial' ? t('evalPartial') : t('evalDivergent'));
+    const tierLabel = evalResult.tier === 'accurate' 
+      ? t('evalAccurate') 
+      : (evalResult.tier === 'partial' ? t('evalPartial') : t('evalDivergent'));
 
     evalContainer.innerHTML = `
       <div class="evaluation-results">
@@ -373,16 +474,18 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
             <span>${tierLabel}</span>
           </div>
 
-          <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; gap: 10px;">
-            <span>Coverage: <strong>${evalResult.metrics.contentCoverage}%</strong></span>
-            <span>Jaccard: <strong>${evalResult.metrics.jaccardIndex}%</strong></span>
+          <div style="font-size: 0.85rem; color: var(--text-secondary); display: flex; gap: 14px;">
+            <span>${t('coverageLabel')}: <strong>${evalResult.metrics.contentCoverage}%</strong></span>
+            <span>${t('jaccardLabel')}: <strong>${evalResult.metrics.jaccardIndex}%</strong></span>
           </div>
         </div>
 
         <!-- Key Concepts Chips -->
         ${evalResult.conceptMatches.length > 0 ? `
           <div>
-            <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); margin-bottom: 4px;">${t('keyConceptsMatched')}:</div>
+            <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 4px;">
+              ${t('keyConceptsMatched')}:
+            </div>
             <div class="concepts-row">
               ${evalResult.conceptMatches.map(c => `
                 <span class="concept-tag ${c.matched ? 'matched' : 'missing'}">
@@ -410,7 +513,7 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
           <button type="button" class="btn btn-primary btn-sm" id="btn-accept-grade">
             <span>✓ ${t('acceptGrade')} (${getRatingName(evalResult.suggestedRating)})</span>
           </button>
-          <span style="font-size: 0.75rem; color: var(--text-muted);">${t('manualOverride')}:</span>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">${t('manualOverride')}:</span>
         </div>
       </div>
     `;
@@ -418,6 +521,7 @@ export function renderDefinitionStudyCard(card, index, total, callbacks = {}) {
     // Accept Grade listener
     const acceptBtn = document.getElementById('btn-accept-grade');
     if (acceptBtn) {
+      acceptBtn.focus();
       acceptBtn.addEventListener('click', () => {
         if (callbacks.onRate) callbacks.onRate(evalResult.suggestedRating);
       });
@@ -456,12 +560,12 @@ export function renderSessionCompleted(sessionCount, onReturn) {
 
   container.innerHTML = `
     <div class="session-completed-card">
-      <div class="completed-icon">🎉</div>
+      <div class="completed-icon">⚡</div>
       <h2 style="font-size: 1.6rem; font-weight: 700;">${t('congratsTitle')}</h2>
-      <p style="color: var(--text-secondary); max-width: 440px;">
+      <p style="color: var(--text-secondary); max-width: 440px; margin-top: 8px;">
         ${t('congratsMsg', { count: sessionCount })}
       </p>
-      <button type="button" class="btn btn-primary btn-lg" id="btn-session-return" style="margin-top: 12px;">
+      <button type="button" class="btn btn-primary btn-lg" id="btn-session-return" style="margin-top: 16px;">
         <span>←</span>
         <span>${t('backToDashboard')}</span>
       </button>
@@ -502,9 +606,9 @@ export function renderLibraryTable(cards, callbacks = {}) {
         <td><span class="badge" style="background: var(--bg-tertiary);">${card.sourceLang.toUpperCase()} → ${card.targetLang.toUpperCase()}</span></td>
         <td><span class="badge ${card.mode === 'word' ? 'badge-new' : 'badge-review'}">${card.mode}</span></td>
         <td><span class="badge badge-${card.status}">${t(`status${capitalize(card.status)}`)}</span></td>
-        <td style="font-variant-numeric: tabular-nums;">${card.interval}d (EF ${card.easeFactor})</td>
+        <td style="font-variant-numeric: tabular-nums;">${card.interval}d (EF ${Number(card.easeFactor || 2.5).toFixed(2)})</td>
         <td style="color: ${isDue ? 'var(--color-danger)' : 'var(--text-secondary)'}; font-weight: ${isDue ? '700' : 'normal'};">
-          ${isDue ? 'Due Today' : dueFormatted}
+          ${isDue ? t('dueTodayLabel') : dueFormatted}
         </td>
         <td class="cell-actions">
           <button type="button" class="btn btn-secondary btn-sm action-edit" title="${t('editCard')}">✏️</button>

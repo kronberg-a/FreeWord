@@ -51,9 +51,9 @@ export function createCard({
       : (typeof keyConcepts === 'string' ? keyConcepts.split(',').map(s => s.trim()).filter(Boolean) : []),
     sourceLang,
     targetLang,
-    interval,
-    repetitions,
-    easeFactor: Math.max(MIN_EASE_FACTOR, parseFloat(easeFactor) || DEFAULT_EASE_FACTOR),
+    interval: parseInt(interval, 10) || 0,
+    repetitions: parseInt(repetitions, 10) || 0,
+    easeFactor: Math.round(Math.max(MIN_EASE_FACTOR, parseFloat(easeFactor) || DEFAULT_EASE_FACTOR) * 100) / 100,
     nextReviewDate,
     status,
     createdAt,
@@ -97,7 +97,6 @@ export function processReview(card, rating) {
       } else {
         interval = Math.max(1, Math.round(interval * easeFactor));
       }
-      // SM-2 delta for grade 3: 0.1 - (5-3)*(0.08 + (5-3)*0.02) = 0
       repetitions += 1;
       status = interval >= MASTERED_INTERVAL_DAYS ? STATUS.MASTERED : STATUS.REVIEW;
       break;
@@ -121,12 +120,13 @@ export function processReview(card, rating) {
 
   // Calculate next review timestamp: now + interval in days
   const nextReviewDate = new Date(now.getTime() + interval * 86400000).toISOString();
+  const roundedEase = Math.round(easeFactor * 100) / 100;
 
   const updatedCard = {
     ...card,
     interval,
     repetitions,
-    easeFactor: Math.round(easeFactor * 100) / 100,
+    easeFactor: roundedEase,
     nextReviewDate,
     status,
     lastReviewedDate: now.toISOString()
@@ -140,20 +140,19 @@ export function processReview(card, rating) {
     timestamp: now.toISOString(),
     previousInterval: card.interval,
     newInterval: interval,
-    easeFactor: updatedCard.easeFactor
+    easeFactor: roundedEase
   };
 
   return { updatedCard, reviewLog };
 }
 
 /**
- * Builds the daily review session queue based on limits and due status
+ * Builds the daily review session queue based on limits, mode, and optional language pair
  */
 export function buildStudyQueue(cards, options = {}) {
   const {
     mode = null, // 'word' | 'definition' | null (all)
-    sourceLang = null,
-    targetLang = null,
+    pair = 'all', // e.g. 'de-ru' or 'all'
     dailyNewLimit = 20,
     dailyReviewLimit = 50
   } = options;
@@ -163,8 +162,10 @@ export function buildStudyQueue(cards, options = {}) {
   // Filter cards by criteria
   const matchingCards = cards.filter(card => {
     if (mode && card.mode !== mode) return false;
-    if (sourceLang && card.sourceLang !== sourceLang) return false;
-    if (targetLang && card.targetLang !== targetLang) return false;
+    if (pair && pair !== 'all') {
+      const cardPair = `${card.sourceLang}-${card.targetLang}`;
+      if (cardPair !== pair) return false;
+    }
     return true;
   });
 
@@ -190,19 +191,26 @@ export function buildStudyQueue(cards, options = {}) {
   const selectedReviews = dueReviews.slice(0, dailyReviewLimit);
   const selectedNew = newCards.slice(0, dailyNewLimit);
 
-  // Return queue: due reviews first, then new learning material
+  // Return queue: due reviews first, then new material
   return [...selectedReviews, ...selectedNew];
 }
 
 /**
- * Computes analytics stats for cards and logs
+ * Computes analytics stats for cards and logs filtered by mode and language pair
  */
 export function computeStats(cards, reviewLogs = [], options = {}) {
-  const { mode = null } = options;
+  const { mode = null, pair = 'all' } = options;
   const now = new Date();
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-  const filteredCards = mode ? cards.filter(c => c.mode === mode) : cards;
+  const filteredCards = cards.filter(c => {
+    if (mode && c.mode !== mode) return false;
+    if (pair && pair !== 'all') {
+      const cardPair = `${c.sourceLang}-${c.targetLang}`;
+      if (cardPair !== pair) return false;
+    }
+    return true;
+  });
 
   let totalCards = filteredCards.length;
   let newCount = 0;
@@ -227,8 +235,12 @@ export function computeStats(cards, reviewLogs = [], options = {}) {
 
   const avgEase = totalCards > 0 ? (easeSum / totalCards).toFixed(2) : '2.50';
 
-  // Calculate retention rate from review logs (Good or Easy / total reviews)
-  const filteredLogs = mode ? reviewLogs.filter(l => l.mode === mode) : reviewLogs;
+  // Calculate retention rate from review logs
+  const filteredLogs = reviewLogs.filter(l => {
+    if (mode && l.mode !== mode) return false;
+    return true;
+  });
+
   const totalReviews = filteredLogs.length;
   const successfulReviews = filteredLogs.filter(l => l.rating === RATING.GOOD || l.rating === RATING.EASY).length;
   const retentionRate = totalReviews > 0 ? Math.round((successfulReviews / totalReviews) * 100) : 100;
