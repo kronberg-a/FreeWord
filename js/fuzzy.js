@@ -259,7 +259,7 @@ export function bigramDiceCoefficient(s1, s2) {
 /**
  * Word Mode Evaluator (Section 4.1):
  * Normalizes user input and reference answer, strips diacritics/punctuation,
- * and checks against comma/semicolon/slash separated synonyms.
+ * and strictly checks against full back and comma/semicolon/slash separated synonyms.
  */
 export function evaluateWordAnswer(typed, referenceBack) {
   if (!typed || !referenceBack) return false;
@@ -275,20 +275,6 @@ export function evaluateWordAnswer(typed, referenceBack) {
     const cleanOpt = normalizeWord(opt);
     if (!cleanOpt) continue;
     if (cleanOpt === cleanTyped) return true;
-
-    // Check Levenshtein distance <= 1 for single words of length >= 5 to forgive 1 typo
-    if (cleanOpt.length >= 5 && Math.abs(cleanOpt.length - cleanTyped.length) <= 1) {
-      if (levenshteinDistance(cleanOpt, cleanTyped) <= 1) {
-        return true;
-      }
-    }
-  }
-
-  // Also check full cleanBack with 1 typo forgiveness if length >= 5
-  if (cleanBack.length >= 5 && Math.abs(cleanBack.length - cleanTyped.length) <= 1) {
-    if (levenshteinDistance(cleanBack, cleanTyped) <= 1) {
-      return true;
-    }
   }
 
   return false;
