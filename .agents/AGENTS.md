@@ -29,9 +29,10 @@ FreeWord/
 ├── .agents/
 │   ├── coder/
 │   │   └── SKILL.md            # Senior Full-Stack Implementation Engineer skill definition
-│   └── designer/
-│       ├── SKILL.md            # Principal UX/UI Critic & Logic Auditor skill definition
-│       └── AUDIT.md            # Prioritized design and logic critique checklist
+│   ├── designer/
+│   │   ├── SKILL.md            # Principal UX/UI Critic & Logic Auditor skill definition
+│   │   └── AUDIT.md            # Prioritized design and logic critique checklist
+│   └── AGENTS.md               # Machine-readable architectural context and agent operating manual
 ├── .github/
 │   └── workflows/
 │       └── static.yml          # GitHub Pages static automated deployment workflow
@@ -53,8 +54,7 @@ FreeWord/
 │   ├── mockData.js             # Initial seed cards & review logs across all 6 languages in both modes
 │   └── storage.js              # LocalStorage persistence, JSON backup export/import, default settings
 ├── index.html                  # Accessible semantic SPA markup with modals and dynamic view sections
-├── README.md                   # User-facing manual, feature list, and getting started instructions
-└── AGENTS.md                   # Machine-readable architectural context and agent operating manual
+└── README.md                   # User-facing manual, feature list, and getting started instructions
 ```
 
 ---

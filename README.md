@@ -102,9 +102,10 @@ FreeWord/
 ├── .agents/
 │   ├── coder/
 │   │   └── SKILL.md         # Senior Full-Stack Implementation Engineer skill definition
-│   └── designer/
-│       ├── SKILL.md         # Principal UX/UI Critic & Logic Auditor skill definition
-│       └── AUDIT.md         # Structured UX/UI & logic critique checklist
+│   ├── designer/
+│   │   ├── SKILL.md         # Principal UX/UI Critic & Logic Auditor skill definition
+│   │   └── AUDIT.md         # Structured UX/UI & logic critique checklist
+│   └── AGENTS.md            # Repository context and AI agent architectural specification
 ├── index.html               # Semantic SPA markup with accessible modals and views
 ├── css/
 │   ├── base.css             # Theme variables (light/dark, WCAG AA contrast), typography
