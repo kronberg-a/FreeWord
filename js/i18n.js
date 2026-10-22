@@ -244,7 +244,7 @@ export const TRANSLATIONS = {
     typeYourDefinition: "Type your explanation or definition here...",
     typeYourTranslation: "Type the translation...",
     wordsModeDesc: "Flashcard & typing vocabulary drills with spaced repetition intervals.",
-    yourAnswer: "Your Answer"
+    yourAnswer: "Your Answer",
     doImportBtn: "Create Folder & Import Cards",
     fetchUrlBtn: "Fetch from Link",
     importQuizletBtn: "Import Quizlet",
@@ -488,7 +488,7 @@ export const TRANSLATIONS = {
     typeYourDefinition: "Type your explanation or definition here...",
     typeYourTranslation: "Type the translation...",
     wordsModeDesc: "Flashcard & typing vocabulary drills with spaced repetition intervals.",
-    yourAnswer: "Your Answer"
+    yourAnswer: "Your Answer",
     doImportBtn: "Создать папку и импортировать",
     fetchUrlBtn: "Загрузить по ссылке",
     importQuizletBtn: "Импорт Quizlet",
@@ -732,7 +732,7 @@ export const TRANSLATIONS = {
     typeYourDefinition: "Type your explanation or definition here...",
     typeYourTranslation: "Type the translation...",
     wordsModeDesc: "Flashcard & typing vocabulary drills with spaced repetition intervals.",
-    yourAnswer: "Your Answer"
+    yourAnswer: "Your Answer",
     doImportBtn: "Ordner erstellen & Karten importieren",
     fetchUrlBtn: "Aus Link laden",
     importQuizletBtn: "Quizlet importieren",
@@ -976,7 +976,7 @@ export const TRANSLATIONS = {
     typeYourDefinition: "Type your explanation or definition here...",
     typeYourTranslation: "Type the translation...",
     wordsModeDesc: "Flashcard & typing vocabulary drills with spaced repetition intervals.",
-    yourAnswer: "Your Answer"
+    yourAnswer: "Your Answer",
     doImportBtn: "Créer le dossier et importer",
     fetchUrlBtn: "Charger depuis le lien",
     importQuizletBtn: "Importer Quizlet",
@@ -1220,7 +1220,7 @@ export const TRANSLATIONS = {
     typeYourDefinition: "Type your explanation or definition here...",
     typeYourTranslation: "Type the translation...",
     wordsModeDesc: "Flashcard & typing vocabulary drills with spaced repetition intervals.",
-    yourAnswer: "Your Answer"
+    yourAnswer: "Your Answer",
     doImportBtn: "Crea cartella e importa",
     fetchUrlBtn: "Carica dal link",
     importQuizletBtn: "Importa Quizlet",
@@ -1464,7 +1464,7 @@ export const TRANSLATIONS = {
     typeYourDefinition: "Type your explanation or definition here...",
     typeYourTranslation: "Type the translation...",
     wordsModeDesc: "Flashcard & typing vocabulary drills with spaced repetition intervals.",
-    yourAnswer: "Your Answer"
+    yourAnswer: "Your Answer",
     doImportBtn: "Crear carpeta e importar",
     fetchUrlBtn: "Cargar desde enlace",
     importQuizletBtn: "Importar Quizlet",
