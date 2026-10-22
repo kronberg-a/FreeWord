@@ -5,7 +5,7 @@
  */
 
 import { t, getCurrentLanguage, SUPPORTED_LANGUAGES } from './i18n.js';
-import { RATING, STATUS, computeStats, getDailyStudiedCounts } from './srs.js';
+import { RATING, STATUS, computeStats } from './srs.js';
 import { speakText } from './audio.js';
 import { evaluateDefinition, normalizeWord, hasFuzzyMatch } from './fuzzy.js';
 
@@ -49,9 +49,9 @@ export function showToast(message, duration = 2800) {
 }
 
 /**
- * Updates Header Quick Stats pill & Daily Limit Indicators
+ * Updates Header Quick Stats pill (Due / New / Mastered)
  */
-export function updateHeaderStats(cards, reviewLogs, activeMode = 'all', selectedPair = 'all', settings = {}) {
+export function updateHeaderStats(cards, reviewLogs, activeMode = 'all', selectedPair = 'all') {
   const stats = computeStats(cards, reviewLogs, { mode: activeMode, pair: selectedPair });
   const badge = document.getElementById('header-stats-badge');
   if (badge) {
@@ -61,23 +61,6 @@ export function updateHeaderStats(cards, reviewLogs, activeMode = 'all', selecte
       <span class="stat-pill-item"><span class="stat-pill-new">${stats.newCount}</span> ${t('headerNew')}</span>
       <span class="stat-pill-dot">·</span>
       <span class="stat-pill-item"><span class="stat-pill-mastered">${stats.masteredCount}</span> ${t('headerMastered')}</span>
-    `;
-  }
-
-  // Update Daily Limits pill
-  const limitsPill = document.getElementById('header-limits-badge');
-  if (limitsPill) {
-    const dailyCounts = getDailyStudiedCounts(reviewLogs);
-    const newCap = settings.dailyNewLimitNoLimit ? '∞' : (settings.dailyNewLimit || 20);
-    const revCap = settings.dailyReviewLimitNoLimit ? '∞' : (settings.dailyReviewLimit || 50);
-
-    const newLabel = t('dailyNewLimitIndicator', { current: dailyCounts.newStudied, max: newCap });
-    const revLabel = t('dailyReviewLimitIndicator', { current: dailyCounts.reviewsStudied, max: revCap });
-
-    limitsPill.innerHTML = `
-      <span id="header-limits-new">${newLabel}</span>
-      <span class="stat-pill-dot">·</span>
-      <span id="header-limits-rev">${revLabel}</span>
     `;
   }
 }

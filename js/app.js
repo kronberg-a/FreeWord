@@ -776,6 +776,11 @@ function setupCardModalListeners() {
     });
   }
 
+  const cardForm = document.getElementById('card-edit-form');
+  if (cardForm) {
+    cardForm.addEventListener('submit', handleSaveCard);
+  }
+
   saveBtn.addEventListener('click', handleSaveCard);
 }
 
@@ -819,7 +824,11 @@ function openCardModal(card = null, defaultMode = 'word', preselectedFolderId = 
   if (alertEl) alertEl.classList.add('hidden');
 
   const settings = getSettings();
-  const folders = getFolders();
+  let folders = getFolders();
+  if (!folders || folders.length === 0) {
+    const defaultFolder = addFolder({ name: 'General', folderType: 'mixed' });
+    folders = [defaultFolder];
+  }
 
   // Populate folder select
   let folderOpts = '';
@@ -1201,6 +1210,16 @@ function populateSettingsForm() {
 
   if (defaultSourceSelect) defaultSourceSelect.value = settings.defaultSourceLang || 'en';
   if (defaultTargetSelect) defaultTargetSelect.value = settings.defaultTargetLang || 'es';
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 // Start app when DOM is ready

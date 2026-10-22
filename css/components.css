@@ -401,19 +401,6 @@
  * Session Launcher & Folder Management Styles
  * ========================================== */
 
-/* Header Limits Badge */
-.header-limits-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  padding: 4px 10px;
-  border-radius: var(--radius-pill);
-  font-size: 0.775rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
 
 /* Session Launcher Panel */
 .session-launcher-panel {
