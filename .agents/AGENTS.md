@@ -27,11 +27,12 @@ This document serves as the persistent architectural and operational guide for a
 ```
 FreeWord/
 ├── .agents/
-│   ├── coder/
-│   │   └── SKILL.md            # Senior Full-Stack Implementation Engineer skill definition
-│   ├── designer/
-│   │   ├── SKILL.md            # Principal UX/UI Critic & Logic Auditor skill definition
-│   │   └── AUDIT.md            # Prioritized design and logic critique checklist
+│   ├── skills/
+│   │   ├── coder/
+│   │   │   └── SKILL.md        # Senior Full-Stack Implementation Engineer skill definition
+│   │   └── designer/
+│   │       ├── SKILL.md        # Principal UX/UI Critic & Logic Auditor skill definition
+│   │       └── AUDIT.md        # Prioritized design and logic critique checklist
 │   └── AGENTS.md               # Machine-readable architectural context and agent operating manual
 ├── .github/
 │   └── workflows/
@@ -210,12 +211,12 @@ Resides in [`js/translator.js`](file:///c:/Users/kronb/Documents/FreeWord/js/tra
 
 When modifying or refactoring this codebase, AI agents must adhere to the specialized skill contracts in `.agents/`:
 
-### Coder Agent ([`.agents/coder/SKILL.md`](file:///c:/Users/kronb/Documents/FreeWord/.agents/coder/SKILL.md))
+### Coder Agent ([`.agents/skills/coder/SKILL.md`](file:///c:/Users/kronb/Documents/FreeWord/.agents/skills/coder/SKILL.md))
 - Maintain clean, zero-bloat vanilla web code. Never introduce React, Vue, jQuery, or heavy bundle pipelines unless explicitly requested by the user.
 - Ensure all DOM element IDs referenced in JavaScript exist in `index.html` or dynamic rendering templates.
 - Preserve keyboard navigation accessibility (<kbd>Space</kbd>, <kbd>Enter</kbd>, <kbd>1</kbd>–<kbd>4</kbd>, <kbd>S</kbd>, <kbd>Esc</kbd>).
 
-### Designer Agent ([`.agents/designer/SKILL.md`](file:///c:/Users/kronb/Documents/FreeWord/.agents/designer/SKILL.md))
+### Designer Agent ([`.agents/skills/designer/SKILL.md`](file:///c:/Users/kronb/Documents/FreeWord/.agents/skills/designer/SKILL.md))
 - Audit interface contrast (WCAG 2.1 AA: minimum 4.5:1 for body text, 3:1 for large headers and UI controls).
 - Guard cognitive clarity and ensure that Word Mode and Definition Mode are visually unmistakable.
 - Audit algorithmic fairness and diff visualization in definition matching.
