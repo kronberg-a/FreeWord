@@ -1,0 +1,226 @@
+/**
+ * FreeWord - Definition Practice Mode & Semantic Diff Styling
+ */
+
+.definition-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.definition-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
+}
+
+.definition-prompt-box {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.definition-term {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.definition-input-area {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.definition-textarea {
+  width: 100%;
+  min-height: 110px;
+  padding: 12px 14px;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 1rem;
+  line-height: 1.5;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.definition-textarea:focus {
+  border-color: var(--accent-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.2);
+}
+
+.definition-submit-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Fuzzy Evaluation Results Container */
+.evaluation-results {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.evaluation-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.similarity-score-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.score-accurate {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+}
+
+.score-partial {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+}
+
+.score-divergent {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
+}
+
+/* Key Concepts Pills */
+.concepts-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.concept-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 0.775rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+
+.concept-tag.matched {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid rgba(63, 185, 80, 0.4);
+}
+
+.concept-tag.missing {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+}
+
+/* Side-by-Side Diff Comparison */
+.diff-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+@media (max-width: 600px) {
+  .diff-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.diff-column {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diff-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.diff-content {
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  min-height: 60px;
+}
+
+/* Diff Token Highlighting */
+.diff-token {
+  display: inline-block;
+  padding: 1px 3px;
+  border-radius: 3px;
+}
+
+.diff-token.match {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.diff-token.missing-concept {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-bottom: 2px solid var(--color-danger);
+  font-weight: 600;
+}
+
+.diff-token.missing {
+  opacity: 0.65;
+  text-decoration: underline dotted var(--text-muted);
+}
+
+.diff-token.extra {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.diff-token.neutral {
+  color: var(--text-secondary);
+}
+
+/* Accept Grade vs Override Action Bar */
+.eval-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+}

@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="FreeWord - Distraction-free, spaced repetition vocabulary and definition learning application.">
+  <title>FreeWord - Distraction-Free Spaced Repetition</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/flashcard.css">
+  <link rel="stylesheet" href="css/definition.css">
+  <link rel="stylesheet" href="css/browser.css">
+</head>
+<body>
+  <div class="app-wrapper">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-container">
+        <!-- Brand -->
+        <div class="header-left">
+          <div class="brand" id="brand-link" title="FreeWord Home">
+            <div class="brand-icon">⚡</div>
+            <span data-i18n="appTitle">FreeWord</span>
+          </div>
+
+          <!-- Study Mode Selector -->
+          <div class="mode-toggle-group" role="tablist" aria-label="Study Mode Selection">
+            <button type="button" class="mode-btn active" id="mode-words-btn" role="tab" aria-selected="true" data-mode="word">
+              <span data-i18n="modeWords">Words</span>
+            </button>
+            <button type="button" class="mode-btn" id="mode-defs-btn" role="tab" aria-selected="false" data-mode="definition">
+              <span data-i18n="modeDefinitions">Definitions</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <nav class="header-center nav-tabs" aria-label="Main Navigation">
+          <button type="button" class="nav-tab-btn active" data-view="dashboard" data-i18n="navDashboard">Dashboard</button>
+          <button type="button" class="nav-tab-btn" data-view="library" data-i18n="navLibrary">Library</button>
+          <button type="button" class="nav-tab-btn" data-view="stats" data-i18n="navStats">Analytics</button>
+          <button type="button" class="nav-tab-btn" data-view="settings" data-i18n="navSettings">Settings</button>
+        </nav>
+
+        <!-- Header Right: Quick Stats & Controls -->
+        <div class="header-right">
+          <div class="header-stats-badge" id="header-stats-badge" title="Due today / Total cards in deck">
+            <span><span class="stat-pill-due" id="header-due-count">0</span> <span data-i18n="dueToday">Due</span></span>
+            <span class="stat-pill-total">/ <span id="header-total-count">0</span></span>
+          </div>
+
+          <!-- Theme Toggle Button -->
+          <button type="button" class="header-control-btn" id="theme-toggle-btn" data-i18n-title="themeToggle" title="Toggle Theme" aria-label="Toggle Theme">
+            <span id="theme-icon">🌙</span>
+          </button>
+
+          <!-- Language Selector -->
+          <div class="lang-select-wrapper">
+            <select id="ui-lang-select" aria-label="UI Language">
+              <option value="en">🇬🇧 EN</option>
+              <option value="ru">🇷🇺 RU</option>
+              <option value="de">🇩🇪 DE</option>
+              <option value="fr">🇫🇷 FR</option>
+              <option value="it">🇮🇹 IT</option>
+              <option value="es">🇪🇸 ES</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Container with Dynamic Views -->
+    <main class="app-main">
+      <!-- 1. DASHBOARD VIEW -->
+      <section id="view-dashboard" class="view-section">
+        <div class="dashboard-grid">
+          <!-- Main Deck Action Panel -->
+          <div class="card-panel deck-hero">
+            <div class="deck-hero-content">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span class="badge badge-new" id="dashboard-active-mode-badge">Words Mode</span>
+                <span id="dashboard-lang-pair-label" style="font-size: 0.8rem; color: var(--text-muted);">All Languages</span>
+              </div>
+              <h2 id="dashboard-hero-title">Ready for your spaced review?</h2>
+              <p id="dashboard-hero-subtitle" data-i18n="wordsModeDesc">Flashcard & typing vocabulary drills with spaced repetition intervals.</p>
+              
+              <!-- Progress Bar -->
+              <div class="progress-bar-container" id="dashboard-progress-bar" title="Mastery Distribution">
+                <div class="progress-segment new" style="width: 25%" title="New"></div>
+                <div class="progress-segment learning" style="width: 25%" title="Learning"></div>
+                <div class="progress-segment review" style="width: 25%" title="Review"></div>
+                <div class="progress-segment mastered" style="width: 25%" title="Mastered"></div>
+              </div>
+
+              <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
+                <span id="bar-label-new">New: 0</span>
+                <span id="bar-label-learning">Learning: 0</span>
+                <span id="bar-label-review">Review: 0</span>
+                <span id="bar-label-mastered">Mastered: 0</span>
+              </div>
+            </div>
+
+            <div class="deck-hero-actions">
+              <button type="button" class="btn btn-primary btn-lg" id="btn-start-review">
+                <span>⚡</span>
+                <span id="btn-start-review-text" data-i18n="startReviewBtn">Start Review Session</span>
+                <span class="badge" id="btn-due-count-badge" style="background: rgba(255,255,255,0.25); color: #fff;">0</span>
+              </button>
+              <button type="button" class="btn btn-secondary" id="btn-open-add-card">
+                <span>+</span>
+                <span data-i18n="addNewCardBtn">Add Item</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Stats Overview Box -->
+          <div class="card-panel">
+            <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 12px;" data-i18n="quickStats">Quick Overview</h3>
+            <div class="quick-stats-grid">
+              <div class="stat-box">
+                <span class="stat-box-label" data-i18n="dueToday">Due Today</span>
+                <span class="stat-box-value" id="stat-due-today" style="color: var(--color-danger);">0</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-box-label" data-i18n="totalCards">Total Cards</span>
+                <span class="stat-box-value" id="stat-total-cards">0</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-box-label" data-i18n="retentionRate">Retention</span>
+                <span class="stat-box-value" id="stat-retention-rate" style="color: var(--color-success);">100%</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-box-label" data-i18n="statMastered">Mastered</span>
+                <span class="stat-box-value" id="stat-mastered-cards" style="color: var(--accent-text);">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. STUDY / REVIEW VIEW -->
+      <section id="view-study" class="view-section hidden">
+        <div class="study-container">
+          <!-- Top bar inside study view -->
+          <div class="study-header">
+            <span class="study-progress-info" id="study-progress-counter">Card 1 of 5</span>
+            <span class="study-mode-badge" id="study-mode-indicator">Word Mode</span>
+            <button type="button" class="study-exit-btn" id="study-exit-btn" data-i18n="backToDashboard">✕ Exit</button>
+          </div>
+
+          <!-- Progress line -->
+          <div class="study-top-progress">
+            <div class="study-top-progress-bar" id="study-progress-bar" style="width: 20%;"></div>
+          </div>
+
+          <!-- Study Body Container -->
+          <div id="study-active-area">
+            <!-- Dynamic Card Content injected by JS -->
+          </div>
+
+          <!-- Docked Bottom Keyboard Shortcuts Legend -->
+          <footer class="keyboard-legend">
+            <div class="legend-item">
+              <kbd class="kbd-badge">Space</kbd>
+              <span data-i18n="shortcutFlip">Flip / Check</span>
+            </div>
+            <div class="legend-item">
+              <kbd class="kbd-badge">1</kbd><kbd class="kbd-badge">2</kbd><kbd class="kbd-badge">3</kbd><kbd class="kbd-badge">4</kbd>
+              <span data-i18n="shortcutRates">Rate SRS</span>
+            </div>
+            <div class="legend-item">
+              <kbd class="kbd-badge">S</kbd>
+              <span data-i18n="shortcutVoice">Audio</span>
+            </div>
+            <div class="legend-item">
+              <kbd class="kbd-badge">Esc</kbd>
+              <span data-i18n="shortcutEscape">Exit</span>
+            </div>
+          </footer>
+        </div>
+      </section>
+
+      <!-- 3. LIBRARY / BROWSER VIEW -->
+      <section id="view-library" class="view-section hidden">
+        <div class="browser-toolbar">
+          <div class="browser-search-row">
+            <div class="search-input-wrapper">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="library-search-input" class="form-input" data-i18n-placeholder="searchPlaceholder" placeholder="Search cards by term, translation or example...">
+            </div>
+            <button type="button" class="btn btn-primary" id="btn-library-add-item">
+              <span>+</span>
+              <span data-i18n="addNewCardBtn">Add Item</span>
+            </button>
+          </div>
+
+          <div class="browser-filters-row">
+            <select id="filter-mode-select" class="filter-select">
+              <option value="all" data-i18n="filterAllModes">All Modes</option>
+              <option value="word" data-i18n="filterWordMode">Word Mode</option>
+              <option value="definition" data-i18n="filterDefMode">Definition Mode</option>
+            </select>
+
+            <select id="filter-status-select" class="filter-select">
+              <option value="all" data-i18n="filterAllStatus">All Statuses</option>
+              <option value="new" data-i18n="statusNew">New</option>
+              <option value="learning" data-i18n="statusLearning">Learning</option>
+              <option value="review" data-i18n="statusReview">Review</option>
+              <option value="mastered" data-i18n="statusMastered">Mastered</option>
+            </select>
+
+            <select id="filter-lang-select" class="filter-select">
+              <option value="all" data-i18n="filterAllLangs">All Languages</option>
+              <option value="en">English (EN)</option>
+              <option value="ru">Russian (RU)</option>
+              <option value="de">German (DE)</option>
+              <option value="fr">French (FR)</option>
+              <option value="it">Italian (IT)</option>
+              <option value="es">Spanish (ES)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Cards Table -->
+        <div class="table-responsive">
+          <table class="cards-table">
+            <thead>
+              <tr>
+                <th data-i18n="tblTerm">Term / Prompt</th>
+                <th data-i18n="tblTranslation">Translation / Definition</th>
+                <th data-i18n="tblPair">Language Pair</th>
+                <th data-i18n="tblMode">Mode</th>
+                <th data-i18n="tblStatus">Status</th>
+                <th data-i18n="tblInterval">Interval</th>
+                <th data-i18n="tblNextReview">Due Date</th>
+                <th data-i18n="tblActions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="library-table-body">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4. ANALYTICS / STATS VIEW -->
+      <section id="view-stats" class="view-section hidden">
+        <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 20px;" data-i18n="statsTitle">Learning Analytics & Forecast</h2>
+        
+        <div class="analytics-grid">
+          <!-- Card distribution -->
+          <div class="chart-panel">
+            <span class="chart-title" data-i18n="cardDistribution">Card Mastery Distribution</span>
+            <div id="stats-distribution-breakdown" style="display: flex; flex-direction: column; gap: 8px;">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+
+          <!-- 7-day forecast -->
+          <div class="chart-panel">
+            <span class="chart-title" data-i18n="reviewsForecast">7-Day Review Forecast</span>
+            <div class="forecast-chart" id="stats-forecast-chart">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+
+        <div class="analytics-grid">
+          <div class="card-panel">
+            <span class="chart-title" data-i18n="totalReviewsLogged">Total Reviews Logged</span>
+            <div style="font-size: 2.2rem; font-weight: 800; margin-top: 12px; color: var(--accent-text);" id="stats-total-reviews">0</div>
+          </div>
+          <div class="card-panel">
+            <span class="chart-title" data-i18n="averageEaseFactor">Average Ease Factor</span>
+            <div style="font-size: 2.2rem; font-weight: 800; margin-top: 12px; color: var(--color-warning);" id="stats-avg-ease">2.50</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. SETTINGS VIEW -->
+      <section id="view-settings" class="view-section hidden">
+        <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 20px;" data-i18n="settingsTitle">Preferences & System Settings</h2>
+
+        <div class="settings-section">
+          <h3 class="settings-section-title" data-i18n="settingsTitle">Study Parameters</h3>
+          
+          <div class="settings-row">
+            <div class="settings-info">
+              <h4 data-i18n="dailyNewLimit">Daily New Cards Limit</h4>
+              <p>Maximum number of unstudied cards introduced per daily session.</p>
+            </div>
+            <div class="settings-ctrl">
+              <input type="number" id="setting-daily-new" class="form-input" min="1" max="200" value="20">
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-info">
+              <h4 data-i18n="dailyReviewLimit">Daily Max Reviews Limit</h4>
+              <p>Cap on the number of due cards presented per day.</p>
+            </div>
+            <div class="settings-ctrl">
+              <input type="number" id="setting-daily-reviews" class="form-input" min="5" max="500" value="50">
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-info">
+              <h4 data-i18n="defaultSourceLang">Default Study Language</h4>
+              <p>Default source language when creating new study cards.</p>
+            </div>
+            <div class="settings-ctrl">
+              <select id="setting-default-source" class="form-select">
+                <option value="en">English (EN)</option>
+                <option value="de">German (DE)</option>
+                <option value="fr">French (FR)</option>
+                <option value="it">Italian (IT)</option>
+                <option value="es">Spanish (ES)</option>
+                <option value="ru">Russian (RU)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-info">
+              <h4 data-i18n="defaultTargetLang">Default Translation Language</h4>
+              <p>Default target native language for translations and definitions.</p>
+            </div>
+            <div class="settings-ctrl">
+              <select id="setting-default-target" class="form-select">
+                <option value="es">Spanish (ES)</option>
+                <option value="en">English (EN)</option>
+                <option value="ru">Russian (RU)</option>
+                <option value="de">German (DE)</option>
+                <option value="fr">French (FR)</option>
+                <option value="it">Italian (IT)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3 class="settings-section-title" data-i18n="backupTitle">Data Management</h3>
+
+          <div class="settings-row">
+            <div class="settings-info">
+              <h4 data-i18n="exportDataBtn">Export All Data (JSON)</h4>
+              <p>Download a complete local backup of all cards, logs, and settings.</p>
+            </div>
+            <div class="settings-ctrl">
+              <button type="button" class="btn btn-secondary" id="btn-export-json" data-i18n="exportDataBtn">Export JSON</button>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-info">
+              <h4 data-i18n="importDataBtn">Import Data (JSON)</h4>
+              <p>Restore or merge deck cards from a JSON backup file.</p>
+            </div>
+            <div class="settings-ctrl">
+              <input type="file" id="import-file-input" accept=".json" class="hidden">
+              <button type="button" class="btn btn-secondary" id="btn-trigger-import" data-i18n="importDataBtn">Import JSON</button>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-info">
+              <h4 data-i18n="resetAllDataBtn" style="color: var(--color-danger);">Reset to Default Seed Data</h4>
+              <p>Restore original sample cards and wipe custom deck history.</p>
+            </div>
+            <div class="settings-ctrl">
+              <button type="button" class="btn btn-danger" id="btn-reset-seed" data-i18n="resetAllDataBtn">Reset All Data</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL: ADD / EDIT CARD WITH AUTO-TRANSLATOR -->
+  <div class="modal-backdrop hidden" id="modal-card-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-card-title">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-card-title" data-i18n="modalAddTitle">Add New Item</h3>
+        <button type="button" class="modal-close-btn" id="modal-card-close" aria-label="Close Modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Mode Tabs -->
+        <div class="modal-tabs" role="tablist">
+          <button type="button" class="modal-tab active" id="modal-tab-word" role="tab" data-mode="word" data-i18n="tabWord">Word / Vocabulary</button>
+          <button type="button" class="modal-tab" id="modal-tab-def" role="tab" data-mode="definition" data-i18n="tabDefinition">Definition Practice</button>
+        </div>
+
+        <!-- Duplicate warning alert -->
+        <div class="duplicate-alert hidden" id="card-duplicate-alert">
+          <span>⚠️</span>
+          <span id="duplicate-alert-text" data-i18n="duplicateWarning">Warning: This term already exists in your deck!</span>
+        </div>
+
+        <form id="card-edit-form">
+          <input type="hidden" id="card-form-id" value="">
+          <input type="hidden" id="card-form-mode" value="word">
+
+          <!-- Term Field with inline Auto-Translate button -->
+          <div class="form-group">
+            <label class="form-label" for="card-form-front" data-i18n="fieldTerm">Target Word / Term</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="card-form-front" class="form-input" style="flex: 1;" required data-i18n-placeholder="fieldTermPlaceholder" placeholder="e.g., ephemeral, das Fernweh, la nostalgia...">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-auto-translate" title="Auto-translate via MyMemory API">
+                <span id="translate-spinner" class="hidden">⏳</span>
+                <span>🌐</span>
+                <span data-i18n="autoTranslateBtn">Auto-Translate</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Language Pair Selectors -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="card-form-source-lang" data-i18n="fieldSourceLang">Study Language (Source)</label>
+              <select id="card-form-source-lang" class="form-select">
+                <option value="en">English (EN)</option>
+                <option value="de">German (DE)</option>
+                <option value="fr">French (FR)</option>
+                <option value="it">Italian (IT)</option>
+                <option value="es">Spanish (ES)</option>
+                <option value="ru">Russian (RU)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="card-form-target-lang" data-i18n="fieldTargetLang">Translation Language (Target)</label>
+              <select id="card-form-target-lang" class="form-select">
+                <option value="es">Spanish (ES)</option>
+                <option value="en">English (EN)</option>
+                <option value="ru">Russian (RU)</option>
+                <option value="de">German (DE)</option>
+                <option value="fr">French (FR)</option>
+                <option value="it">Italian (IT)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Translation / Meaning Field -->
+          <div class="form-group" id="group-form-translation">
+            <label class="form-label" for="card-form-back-word" data-i18n="fieldTranslation">Translation / Meaning</label>
+            <input type="text" id="card-form-back-word" class="form-input" data-i18n-placeholder="fieldTranslationPlaceholder" placeholder="Translation or primary meaning...">
+          </div>
+
+          <!-- Definition Field (shown in Definition mode) -->
+          <div class="form-group hidden" id="group-form-definition">
+            <label class="form-label" for="card-form-back-def" data-i18n="fieldDefinition">Target Definition</label>
+            <textarea id="card-form-back-def" class="form-textarea" data-i18n-placeholder="fieldDefinitionPlaceholder" placeholder="Accurate written explanation of the term..."></textarea>
+          </div>
+
+          <!-- Key Concepts (shown in Definition mode) -->
+          <div class="form-group hidden" id="group-form-concepts">
+            <label class="form-label" for="card-form-concepts" data-i18n="fieldKeyConcepts">Key Concepts / Keywords (Optional)</label>
+            <input type="text" id="card-form-concepts" class="form-input" placeholder="e.g. chance, happy, beneficial">
+            <span class="form-help" data-i18n="fieldKeyConceptsHelp">Comma-separated terms that must appear in recall answers</span>
+          </div>
+
+          <!-- Context Sentence -->
+          <div class="form-group">
+            <label class="form-label" for="card-form-context" data-i18n="fieldContext">Context / Example Sentence</label>
+            <textarea id="card-form-context" class="form-textarea" data-i18n-placeholder="fieldContextPlaceholder" placeholder="e.g., The ephemeral beauty of cherry blossoms..."></textarea>
+          </div>
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="modal-card-cancel" data-i18n="cancelBtn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="modal-card-save" data-i18n="saveCardBtn">Save Card</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <!-- Modular Application Scripts -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
