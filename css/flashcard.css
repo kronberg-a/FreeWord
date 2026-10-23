@@ -1,28 +1,104 @@
 /**
  * FreeWord - Study View & Flashcard (Word Mode) Styling
+ * High-Velocity Mobile-First Thumb Zone Ergonomics & PC Layout
  */
+
+#view-study {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior-y: contain;
+  display: flex;
+  flex-direction: column;
+}
 
 .study-container {
   max-width: 680px;
+  width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  min-height: 520px;
+  gap: 14px;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  position: relative;
 }
 
-/* Study Header & Progress */
+/* ========================================================
+   TOP COMPACT TELEMETRY BAR
+   Specification 2.1: Height <= 48px, Exit, Progress, Remaining
+   ======================================================== */
 .study-header {
+  height: 48px;
+  max-height: 48px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px;
+  padding: 0 8px;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  user-select: none;
+}
+
+.study-exit-btn {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  touch-action: manipulation;
+}
+
+.study-exit-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+.study-header-progress-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  max-width: 340px;
+  margin: 0 auto;
+}
+
+.study-top-progress {
+  width: 100%;
+  height: 4px;
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.study-top-progress-bar {
+  height: 100%;
+  background-color: var(--accent-primary);
+  transition: width 0.2s ease;
 }
 
 .study-progress-info {
-  font-size: 0.85rem;
+  font-size: 0.725rem;
   font-weight: 600;
   color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.study-header-right-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .study-mode-badge {
@@ -33,50 +109,49 @@
   border: 1px solid var(--border-color);
   color: var(--text-primary);
   font-weight: 600;
+  white-space: nowrap;
 }
 
-.study-exit-btn {
-  font-size: 0.825rem;
-  color: var(--text-muted);
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  transition: color var(--transition-fast);
-}
-
-.study-exit-btn:hover {
-  color: var(--text-primary);
-}
-
-.study-top-progress {
-  height: 4px;
-  background-color: var(--bg-tertiary);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-}
-
-.study-top-progress-bar {
-  height: 100%;
-  background-color: var(--accent-primary);
-  transition: width 0.25s ease;
+/* ========================================================
+   CENTER FLEXIBLE STAGE (THE CARD)
+   Specification 2.2: Middle flex-grow, dynamic scaling
+   ======================================================== */
+.study-active-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0;
 }
 
 /* 3D Flip Card Container */
 .flashcard-wrapper {
   perspective: 1200px;
   width: 100%;
-  min-height: 380px;
+  flex: 1;
+  min-height: 320px;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .flashcard {
   width: 100%;
-  min-height: 380px;
+  height: 100%;
+  min-height: 320px;
   position: relative;
   transform-style: preserve-3d;
-  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: default;
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  cursor: pointer;
   border-radius: var(--radius-lg);
   box-shadow: var(--card-shadow);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y;
 }
 
 .flashcard.flipped {
@@ -93,11 +168,13 @@
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  padding: 32px 28px;
+  padding: 24px 22px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   transition: border-color var(--transition-fast);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .flashcard-front {
@@ -133,11 +210,12 @@
   z-index: 2;
 }
 
-/* Card Content Details */
+/* Card Content Details & CLS Zero Shift */
 .card-face-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 32px;
 }
 
 .card-lang-tag {
@@ -148,17 +226,23 @@
   letter-spacing: 0.05em;
 }
 
+/* Audio Pronunciation Button: 48x48px Prominent Thumb Target */
 .audio-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--radius-pill);
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 50%;
   background-color: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 1.25rem;
   transition: all var(--transition-fast);
+  touch-action: manipulation;
+  cursor: pointer;
 }
 
 .audio-btn:hover {
@@ -185,25 +269,29 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 24px 0;
+  padding: 16px 0;
   flex: 1;
 }
 
+/* Responsive clamp font for Target Term */
 .card-term {
-  font-size: 2.2rem;
+  font-size: clamp(1.4rem, 5.5vw, 2.2rem);
   font-weight: 700;
   letter-spacing: -0.02em;
   margin-bottom: 4px;
   color: var(--text-primary);
+  line-height: 1.2;
 }
 
+/* CLS = 0 Pre-allocated Heights */
 .card-transcription {
   font-family: var(--font-mono, monospace);
   font-size: 0.95rem;
   color: var(--text-muted);
   letter-spacing: 0.02em;
+  min-height: 22px;
   margin-top: 2px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .card-pos-tag {
@@ -217,14 +305,84 @@
   background-color: var(--bg-tertiary);
   color: var(--text-secondary);
   border: 1px solid var(--border-color);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
+.card-translation-reveal {
+  font-size: clamp(1.25rem, 5vw, 1.85rem);
+  font-weight: 700;
+  color: var(--accent-text);
+  margin-bottom: 8px;
+  line-height: 1.25;
+}
+
+.card-context-quote {
+  font-style: italic;
+  font-size: clamp(0.85rem, 3.2vw, 0.98rem);
+  color: var(--text-secondary);
+  max-width: 520px;
+  margin: 10px auto 0;
+  line-height: 1.45;
+  border-left: 3px solid var(--accent-primary);
+  padding-left: 12px;
+  text-align: left;
+}
+
+.card-face-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  user-select: none;
+  min-height: 24px;
+}
+
+/* ========================================================
+   BOTTOM ACTION DOCK (THUMB ZONE)
+   Specification 2.3: min-height 52px, 12px spacing
+   ======================================================== */
+.study-bottom-dock {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0 calc(10px + env(safe-area-inset-bottom));
+  z-index: 20;
+}
+
+.study-choice-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+}
+
+.btn-dock-action {
+  min-height: 52px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  touch-action: manipulation;
+  transition: all var(--transition-fast);
+  border: 1px solid var(--border-color);
+}
+
+.btn-dock-action:active {
+  transform: scale(0.97);
+}
+
+/* Self-Evaluation Bar: ReWord-Style Forgot / Remembered */
 .self-eval-bar {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  margin-top: 14px;
+  width: 100%;
   animation: slideUp 0.18s ease-out;
 }
 
@@ -233,13 +391,19 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 14px 16px;
+  min-height: 52px;
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 700;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all var(--transition-fast);
-  border: 1px solid transparent;
+  touch-action: manipulation;
+  border: 2px solid transparent;
+}
+
+.btn-self-eval:active {
+  transform: scale(0.97);
 }
 
 .btn-self-eval.forgot {
@@ -254,69 +418,238 @@
 }
 
 .btn-self-eval.remembered {
-  background-color: var(--color-success-bg);
-  color: var(--color-success);
+  background-color: var(--color-success);
+  color: #ffffff;
   border-color: var(--color-success);
+  box-shadow: 0 2px 8px rgba(63, 185, 80, 0.3);
 }
 
 .btn-self-eval.remembered:hover {
-  background-color: var(--color-success);
-  color: #fff;
+  opacity: 0.95;
 }
 
-.card-translation-reveal {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--accent-text);
-  margin-bottom: 12px;
+/* Active Recall Word Typing Box */
+.word-recall-box {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 440px;
+  width: 100%;
 }
 
-.card-context-quote {
-  font-style: italic;
-  font-size: 0.95rem;
-  color: var(--text-secondary);
-  max-width: 520px;
-  margin: 12px auto 0;
-  line-height: 1.5;
-  border-left: 2px solid var(--accent-primary);
-  padding-left: 12px;
-  text-align: left;
+.word-recall-input {
+  flex: 1;
+  padding: 12px 14px;
+  font-size: 16px !important; /* Prevents iOS auto-zoom */
+  background-color: var(--bg-input);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+  min-height: 48px;
 }
 
-.card-face-footer {
+.word-recall-input:focus {
+  border-color: var(--accent-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.25);
+}
+
+.word-recall-submit-btn {
+  min-height: 48px;
+  padding: 0 18px;
+  font-weight: 700;
+}
+
+/* ========================================================
+   TOUCH GESTURES & CARD SWIPING (HARDWARE ACCELERATED)
+   Specification 3: translate3d, swipe right / left threshold
+   ======================================================== */
+.flashcard.swiping {
+  transition: none !important;
+  will-change: transform;
+}
+
+.flashcard.animating-exit-right {
+  transition: transform 0.26s ease-out, opacity 0.26s ease-out !important;
+  transform: translate3d(125vw, 0, 0) rotate(18deg) !important;
+  opacity: 0 !important;
+}
+
+.flashcard.animating-exit-left {
+  transition: transform 0.26s ease-out, opacity 0.26s ease-out !important;
+  transform: translate3d(-125vw, 0, 0) rotate(-18deg) !important;
+  opacity: 0 !important;
+}
+
+.flashcard.animating-reset {
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+  transform: translate3d(0, 0, 0) rotate(0deg) !important;
+}
+
+/* Swipe Indicator Overlays */
+.swipe-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  user-select: none;
 }
 
-/* Word Mode: Optional Typing Variant Container */
-.study-typing-box {
-  margin-top: 14px;
-  display: flex;
-  gap: 8px;
+.swipe-overlay.remembered {
+  border: 3.5px solid var(--color-success);
+  background: rgba(63, 185, 80, 0.16);
 }
 
-.study-typing-box input {
-  flex: 1;
-  padding: 10px 14px;
-  font-size: 1rem;
+.swipe-overlay.forgot {
+  border: 3.5px solid var(--color-danger);
+  background: rgba(248, 81, 73, 0.16);
+}
+
+.swipe-badge {
+  padding: 10px 22px;
+  border-radius: var(--radius-pill);
+  font-weight: 800;
+  font-size: 1.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.swipe-overlay.remembered .swipe-badge {
+  background-color: var(--color-success);
+  color: #ffffff;
+}
+
+.swipe-overlay.forgot .swipe-badge {
+  background-color: var(--color-danger);
+  color: #ffffff;
+}
+
+/* ========================================================
+   VIRTUAL KEYBOARD VISUAL VIEWPORT ADAPTATION
+   Specification 4.1: Compact sticky banner when keyboard open
+   ======================================================== */
+.study-container.keyboard-open {
+  justify-content: flex-start !important;
+  gap: 6px !important;
+}
+
+.study-container.keyboard-open .card-center-prompt {
+  padding: 2px 0 !important;
+}
+
+.study-container.keyboard-open .card-term {
+  font-size: clamp(1.15rem, 4.5vw, 1.35rem) !important;
+  margin-bottom: 0 !important;
+}
+
+.study-container.keyboard-open .card-transcription,
+.study-container.keyboard-open .card-pos-tag,
+.study-container.keyboard-open .card-context-quote,
+.study-container.keyboard-open .card-face-footer {
+  display: none !important;
+}
+
+.study-container.keyboard-open .audio-btn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  font-size: 1rem !important;
+}
+
+.study-container.keyboard-open .flashcard {
+  min-height: auto !important;
+  height: auto !important;
+}
+
+.study-container.keyboard-open .flashcard-face {
+  padding: 10px 14px !important;
+  position: relative !important;
+  height: auto !important;
+}
+
+.study-container.keyboard-open .flashcard-wrapper {
+  min-height: auto !important;
+  height: auto !important;
+  flex: none !important;
+}
+
+.study-container.keyboard-open .word-recall-box {
+  margin-top: 8px !important;
+}
+
+/* Shake Animation for Incorrect Attempts */
+@keyframes errorShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+.shake {
+  animation: errorShake 0.3s ease-in-out;
+  border-color: var(--color-danger) !important;
+}
+
+/* Attempt Badge & Feedback */
+.attempt-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.attempt-badge.warning {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+}
+
+.attempt-badge.danger {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.attempt-feedback-box {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.attempt-feedback-box.error {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
+}
+
+.attempt-feedback-box.success {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
 }
 
 /* SRS Ratings Toolbar */
 .srs-ratings-bar {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  margin-top: 8px;
+  gap: 8px;
+  width: 100%;
   animation: slideUp 0.18s ease-out;
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 .rating-btn {
@@ -324,13 +657,14 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 12px 8px;
+  gap: 3px;
+  padding: 10px 4px;
+  min-height: 52px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
   background-color: var(--bg-card);
   transition: all var(--transition-fast);
-  box-shadow: var(--shadow-sm);
+  touch-action: manipulation;
 }
 
 .rating-btn:hover {
@@ -338,62 +672,34 @@
   box-shadow: var(--shadow-md);
 }
 
-.rating-btn.again {
-  border-color: rgba(248, 81, 73, 0.4);
-}
-.rating-btn.again:hover {
-  background-color: var(--color-danger-bg);
-  border-color: var(--color-danger);
-}
-
-.rating-btn.hard {
-  border-color: rgba(210, 153, 34, 0.4);
-}
-.rating-btn.hard:hover {
-  background-color: var(--color-warning-bg);
-  border-color: var(--color-warning);
-}
-
-.rating-btn.good {
-  border-color: rgba(47, 129, 247, 0.4);
-}
-.rating-btn.good:hover {
-  background-color: var(--accent-light);
-  border-color: var(--accent-primary);
-}
-
-.rating-btn.easy {
-  border-color: rgba(63, 185, 80, 0.4);
-}
-.rating-btn.easy:hover {
-  background-color: var(--color-success-bg);
-  border-color: var(--color-success);
+.rating-btn:active {
+  transform: scale(0.96);
 }
 
 .rating-label {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .rating-hint {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
 }
 
 .rating-key-badge {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-family: var(--font-mono);
   font-weight: 700;
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: var(--radius-sm);
   background-color: var(--bg-tertiary);
   border: 1px solid var(--border-color);
 }
 
-/* Keyboard legend docked at bottom */
+/* Keyboard legend docked at bottom (Desktop Only) */
 .keyboard-legend {
-  margin-top: 20px;
+  margin-top: auto;
   padding: 10px 14px;
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -423,10 +729,36 @@
   color: var(--text-secondary);
 }
 
+/* Responsive Breakpoints */
+@media (max-width: 767.98px) {
+  .keyboard-legend {
+    display: none !important;
+  }
+  .study-exit-btn .exit-label {
+    display: none;
+  }
+  .study-mode-badge {
+    display: none;
+  }
+  .study-container {
+    padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom);
+    gap: 8px;
+  }
+}
+
+@media (min-width: 768px) {
+  .study-exit-btn .exit-label {
+    display: inline;
+  }
+  .study-mode-badge {
+    display: inline-flex;
+  }
+}
+
 /* Session Finished State */
 .session-completed-card {
   text-align: center;
-  padding: 48px 24px;
+  padding: 36px 20px;
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
@@ -434,73 +766,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
 }
 
 .completed-icon {
   font-size: 3rem;
-  margin-bottom: 4px;
-}
-
-/* Optional Active Recall Typing Variant on Flashcard Front */
-.word-recall-box {
-  margin-top: 18px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 440px;
-  width: 100%;
-}
-
-.word-recall-input {
-  flex: 1;
-  padding: 8px 12px;
-  font-size: 0.9rem;
-  background-color: var(--bg-input);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  transition: all var(--transition-fast);
-}
-
-.word-recall-input:focus {
-  border-color: var(--accent-primary);
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(47, 129, 247, 0.2);
-}
-
-/* Recall Feedback Banner on Back Face */
-.recall-feedback-banner {
-  margin-top: 10px;
-  padding: 6px 12px;
-  border-radius: var(--radius-md);
-  font-size: 0.85rem;
-  font-weight: 600;
-  display: inline-block;
-  max-width: 90%;
-  text-align: center;
-  animation: fadeIn 0.2s ease-out;
-}
-
-.recall-feedback-banner.match-good {
-  background-color: var(--color-success-bg);
-  color: var(--color-success);
-  border: 1px solid var(--color-success);
-}
-
-.recall-feedback-banner.match-divergent {
-  background-color: var(--color-warning-bg);
-  color: var(--color-warning);
-  border: 1px solid var(--color-warning);
-}
-
-.rating-btn.active-srs-grade {
-  border-color: var(--accent-primary) !important;
-  box-shadow: 0 0 0 2px var(--accent-primary) !important;
-  background-color: var(--accent-light) !important;
-}
-
-#pass-continue-bar {
-  margin-top: 14px;
-  animation: fadeIn 0.2s ease-out;
+  margin-bottom: 2px;
 }

@@ -15,7 +15,8 @@ import { translateText, checkDuplicate, debounce } from './translator.js';
 import { extractSlugFromUrl, parseFlashcardsText, fetchQuizletSet } from './quizlet.js';
 import { 
   applyI18n, showToast, updateHeaderStats, renderDashboard, renderWordStudyCard, 
-  renderDefinitionStudyCard, renderSessionCompleted, renderLibraryTable, renderAnalytics 
+  renderDefinitionStudyCard, renderSessionCompleted, renderLibraryTable, renderAnalytics,
+  initBottomSheetModalGestures
 } from './ui.js';
 
 // Application State
@@ -117,6 +118,9 @@ function initApp() {
   setupMoveModalListeners();
   setupQuizletModalListeners();
   setupGlobalKeyboardShortcuts();
+  setupMobileNavigation();
+  setupVisualViewport();
+  initBottomSheetModalGestures();
 
   // Initial render
   applyI18n();
@@ -202,6 +206,14 @@ function switchView(viewName, scrollToId = null) {
   if (activeSection) {
     activeSection.classList.remove('hidden');
   }
+
+  // Toggle in-study-session class on body for mobile fullscreen ergonomics
+  document.body.classList.toggle('in-study-session', viewName === 'study');
+
+  // Sync mobile bottom nav buttons active state
+  document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-view') === viewName);
+  });
 
   refreshCurrentView();
 
@@ -339,6 +351,52 @@ function setupDashboardListeners() {
   if (openCreateFolderBtn) {
     openCreateFolderBtn.addEventListener('click', () => openFolderModal(null));
   }
+
+  // Mobile Sticky Session Launcher Buttons (Specification 5.4)
+  const mobStartBtn = document.getElementById('mob-btn-start-session');
+  if (mobStartBtn) {
+    mobStartBtn.addEventListener('click', startStudySession);
+  }
+
+  document.querySelectorAll('.mobile-sticky-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      state.sessionType = pill.getAttribute('data-session');
+      refreshCurrentView();
+    });
+  });
+}
+
+/**
+ * Setup Mobile 4-Tab Bottom Navigation Bar (Specification 5.1)
+ */
+function setupMobileNavigation() {
+  document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetView = btn.getAttribute('data-view');
+      if (targetView) {
+        switchView(targetView);
+      } else if (btn.id === 'mob-nav-add') {
+        openCardModal(null, state.activeMode === 'definition' ? 'definition' : 'word');
+      }
+    });
+  });
+}
+
+/**
+ * Visual Viewport Adaptation for Virtual Software Keyboards (Specification 4.1)
+ */
+function setupVisualViewport() {
+  if (!window.visualViewport) return;
+
+  const onViewportChange = () => {
+    const studyContainer = document.getElementById('study-container');
+    if (!studyContainer) return;
+    const isKeyboardOpen = window.visualViewport.height < window.innerHeight * 0.82;
+    studyContainer.classList.toggle('keyboard-open', isKeyboardOpen);
+  };
+
+  window.visualViewport.addEventListener('resize', onViewportChange);
+  window.visualViewport.addEventListener('scroll', onViewportChange);
 }
 
 /**

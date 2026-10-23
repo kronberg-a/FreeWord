@@ -2,7 +2,11 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#161b22">
   <meta name="description" content="FreeWord - Distraction-free, spaced repetition vocabulary and definition learning application.">
   <title>FreeWord - Distraction-Free Spaced Repetition</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
@@ -266,24 +270,47 @@
             </div>
           </div>
         </div>
+
+        <!-- Sticky Mobile "Start Session" Bar -->
+        <div class="mobile-sticky-launcher hidden" id="mobile-sticky-launcher">
+          <div class="mobile-sticky-modes" role="radiogroup" aria-label="Session Mode">
+            <button type="button" class="mobile-sticky-pill active" data-session="mixed" id="mob-btn-session-mixed" role="radio" aria-checked="true">
+              <span>⚡</span><span>Mixed</span>
+            </button>
+            <button type="button" class="mobile-sticky-pill" data-session="learning" id="mob-btn-session-learning" role="radio" aria-checked="false">
+              <span>🌱</span><span>Learn</span>
+            </button>
+            <button type="button" class="mobile-sticky-pill" data-session="reviewing" id="mob-btn-session-reviewing" role="radio" aria-checked="false">
+              <span>🔄</span><span>Review</span>
+            </button>
+          </div>
+          <button type="button" class="btn btn-primary mobile-sticky-start-btn" id="mob-btn-start-session">
+            <span>⚡</span>
+            <span data-i18n="mobileStartSession">Start Session</span>
+            <span class="badge" id="mob-btn-session-count-badge" style="background: rgba(255,255,255,0.25); color: #fff;">0</span>
+          </button>
+        </div>
       </section>
 
       <!-- 2. STUDY / REVIEW VIEW -->
       <section id="view-study" class="view-section hidden">
-        <div class="study-container">
-          <!-- Top bar inside study view -->
-          <div class="study-header">
-            <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="study-container" id="study-container">
+          <!-- Top compact bar inside study view (Telemetry) -->
+          <div class="study-header" id="study-header">
+            <button type="button" class="study-exit-btn" id="study-exit-btn" data-i18n-title="backToDashboard" aria-label="Exit Session">
+              <span class="exit-icon">✕</span>
+              <span class="exit-label" data-i18n="backToDashboard">Exit</span>
+            </button>
+            <div class="study-header-progress-wrap">
+              <div class="study-top-progress">
+                <div class="study-top-progress-bar" id="study-progress-bar" style="width: 20%;"></div>
+              </div>
               <span class="study-progress-info" id="study-progress-counter">Card 1 of 5</span>
+            </div>
+            <div class="study-header-right-meta">
+              <span class="study-mode-badge" id="study-mode-indicator">Word Mode</span>
               <span class="badge" id="study-queue-remaining" style="background: var(--bg-tertiary); color: var(--text-secondary); font-size: 0.75rem;">5 left</span>
             </div>
-            <span class="study-mode-badge" id="study-mode-indicator">Word Mode</span>
-            <button type="button" class="study-exit-btn" id="study-exit-btn" data-i18n="backToDashboard">✕ Exit</button>
-          </div>
-
-          <!-- Progress line -->
-          <div class="study-top-progress">
-            <div class="study-top-progress-bar" id="study-progress-bar" style="width: 20%;"></div>
           </div>
 
           <!-- Study Body Container -->
@@ -291,8 +318,8 @@
             <!-- Dynamic Card Content injected by JS -->
           </div>
 
-          <!-- Docked Bottom Keyboard Shortcuts Legend -->
-          <footer class="keyboard-legend">
+          <!-- Docked Bottom Keyboard Shortcuts Legend (Desktop) -->
+          <footer class="keyboard-legend" id="study-keyboard-legend">
             <div class="legend-item">
               <kbd class="kbd-badge">Space</kbd>
               <span data-i18n="shortcutFlip">Flip / Check</span>
@@ -498,6 +525,7 @@
   <!-- MODAL: ADD / EDIT CARD WITH AUTO-TRANSLATOR & FOLDER ENFORCEMENT -->
   <div class="modal-backdrop hidden" id="modal-card-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-card-title">
     <div class="modal-container">
+      <div class="sheet-drag-handle" aria-hidden="true"><div class="sheet-drag-pill"></div></div>
       <div class="modal-header">
         <h3 class="modal-title" id="modal-card-title" data-i18n="modalAddTitle">Add New Item</h3>
         <button type="button" class="modal-close-btn" id="modal-card-close" aria-label="Close Modal">&times;</button>
@@ -625,6 +653,7 @@
   <!-- MODAL: CREATE / EDIT FOLDER -->
   <div class="modal-backdrop hidden" id="modal-folder-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-folder-title">
     <div class="modal-container" style="max-width: 480px;">
+      <div class="sheet-drag-handle" aria-hidden="true"><div class="sheet-drag-pill"></div></div>
       <div class="modal-header">
         <h3 class="modal-title" id="modal-folder-title" data-i18n="modalFolderTitle">New Folder</h3>
         <button type="button" class="modal-close-btn" id="modal-folder-close" aria-label="Close Modal">&times;</button>
@@ -672,6 +701,7 @@
   <!-- MODAL: MOVE CARD TO FOLDER -->
   <div class="modal-backdrop hidden" id="modal-move-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-move-title">
     <div class="modal-container" style="max-width: 440px;">
+      <div class="sheet-drag-handle" aria-hidden="true"><div class="sheet-drag-pill"></div></div>
       <div class="modal-header">
         <h3 class="modal-title" id="modal-move-title" data-i18n="moveModalTitle">Move Card to Folder</h3>
         <button type="button" class="modal-close-btn" id="modal-move-close" aria-label="Close Modal">&times;</button>
@@ -697,6 +727,7 @@
   <!-- MODAL: IMPORT FROM QUIZLET -->
   <div class="modal-backdrop hidden" id="modal-quizlet-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-quizlet-title">
     <div class="modal-container" style="max-width: 620px;">
+      <div class="sheet-drag-handle" aria-hidden="true"><div class="sheet-drag-pill"></div></div>
       <div class="modal-header">
         <h3 class="modal-title" id="modal-quizlet-title" data-i18n="importQuizletTitle">Import Flashcards from Quizlet</h3>
         <button type="button" class="modal-close-btn" id="modal-quizlet-close" aria-label="Close Modal">&times;</button>
@@ -803,6 +834,26 @@
       </div>
     </div>
   </div>
+
+  <!-- Mobile Bottom Tab Navigation Bar (Fixed 4-Tab Main Workspace on Mobile) -->
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Mobile Navigation">
+    <button type="button" class="mobile-nav-btn active" data-view="dashboard" id="mob-nav-dashboard">
+      <span class="mobile-nav-icon">📁</span>
+      <span class="mobile-nav-label" data-i18n="navTabStudy">Study / Folders</span>
+    </button>
+    <button type="button" class="mobile-nav-btn" data-view="library" id="mob-nav-library">
+      <span class="mobile-nav-icon">🔍</span>
+      <span class="mobile-nav-label" data-i18n="navTabBrowse">Browse Cards</span>
+    </button>
+    <button type="button" class="mobile-nav-btn mobile-nav-add-btn" id="mob-nav-add" aria-label="Add Item">
+      <span class="mobile-nav-icon-circle">＋</span>
+      <span class="mobile-nav-label" data-i18n="navTabAdd">+ Add</span>
+    </button>
+    <button type="button" class="mobile-nav-btn" data-view="settings" id="mob-nav-settings">
+      <span class="mobile-nav-icon">⚙️</span>
+      <span class="mobile-nav-label" data-i18n="navTabSettings">Settings</span>
+    </button>
+  </nav>
 
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toast-container" aria-live="polite"></div>

@@ -179,6 +179,27 @@ export function renderDashboard(cards, folders, reviewLogs, options = {}, callba
     startBtn.style.opacity = (selectedFolderCount === 0 || matchingCount === 0) ? '0.5' : '1';
   }
 
+  // Update Mobile Sticky Session Launcher (Specification 5.4)
+  const mobSticky = document.getElementById('mobile-sticky-launcher');
+  const mobCountBadge = document.getElementById('mob-btn-session-count-badge');
+  const mobStartBtn = document.getElementById('mob-btn-start-session');
+  if (mobSticky) {
+    mobSticky.classList.toggle('hidden', selectedFolderCount === 0 || matchingCount === 0);
+  }
+  if (mobCountBadge) {
+    mobCountBadge.textContent = String(matchingCount);
+  }
+  if (mobStartBtn) {
+    mobStartBtn.disabled = selectedFolderCount === 0 || matchingCount === 0;
+    mobStartBtn.style.opacity = (selectedFolderCount === 0 || matchingCount === 0) ? '0.5' : '1';
+  }
+  document.querySelectorAll('.mobile-sticky-pill').forEach(pill => {
+    const pillType = pill.getAttribute('data-session');
+    const isSelected = pillType === sessionType;
+    pill.classList.toggle('active', isSelected);
+    pill.setAttribute('aria-checked', String(isSelected));
+  });
+
   // 4. Render Folder Cards Grid
   const foldersGrid = document.getElementById('folder-cards-grid');
   const totalFoldersBadge = document.getElementById('folders-total-badge');
@@ -214,7 +235,6 @@ export function renderDashboard(cards, folders, reviewLogs, options = {}, callba
         return `
           <div class="folder-card ${isSelected ? 'selected' : ''}" data-folder-id="${folder.id}">
             <div class="folder-card-top">
-              <input type="checkbox" class="folder-checkbox" ${isSelected ? 'checked' : ''} aria-label="Select folder ${escapeHtml(folder.name)} for study">
               <div class="folder-card-info">
                 <div class="folder-card-title-row">
                   <span class="folder-card-name">${escapeHtml(folder.name)}</span>
@@ -227,6 +247,9 @@ export function renderDashboard(cards, folders, reviewLogs, options = {}, callba
                   <span class="stat-pill-dot">·</span>
                   <span class="folder-count-item"><span>${folderCards.length}</span> ${t('totalCards')}</span>
                 </div>
+              </div>
+              <div class="folder-checkbox-wrap">
+                <input type="checkbox" class="folder-checkbox" ${isSelected ? 'checked' : ''} aria-label="Select folder ${escapeHtml(folder.name)} for study">
               </div>
             </div>
 
@@ -313,7 +336,7 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
 
   const progressPct = Math.round((Math.max(0, totalInitial - remainingInSession + 1) / totalInitial) * 100);
 
-  // Update header progress
+  // Update header progress telemetry
   const counterEl = document.getElementById('study-progress-counter');
   const remainingEl = document.getElementById('study-queue-remaining');
   const progBarEl = document.getElementById('study-progress-bar');
@@ -334,19 +357,28 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
   card.currentAttempt = card.currentAttempt || 1;
   let attemptsRemaining = Math.max(1, 4 - card.currentAttempt);
   let isFlipped = false;
+  let isTypingActive = false;
 
   container.innerHTML = `
     <div class="flashcard-wrapper" id="flashcard-wrapper">
       <div class="flashcard" id="study-flashcard">
+        <!-- ReWord-Style Swipe Overlay Badges (Hardware Accelerated) -->
+        <div class="swipe-overlay remembered" id="swipe-overlay-remembered">
+          <span class="swipe-badge">${t('cardSwipeRemembered')} ✓</span>
+        </div>
+        <div class="swipe-overlay forgot" id="swipe-overlay-forgot">
+          <span class="swipe-badge">${t('cardSwipeForgot')} ✗</span>
+        </div>
+
         <!-- FRONT FACE -->
         <div class="flashcard-face flashcard-front">
           <div class="card-face-header">
             <span class="card-lang-tag">${card.sourceLang.toUpperCase()}</span>
             <div style="display: flex; align-items: center; gap: 8px;">
               <span class="attempt-badge ${attemptsRemaining === 1 ? 'danger' : (attemptsRemaining === 2 ? 'warning' : '')}" id="attempt-badge">
-                ${t('attemptsRemaining', { n: attemptsRemaining })}
+                ${t('attemptsLeftShort', { n: attemptsRemaining })}
               </span>
-              <button type="button" class="audio-btn" id="card-audio-btn-front" title="${t('pronounceWord')}">
+              <button type="button" class="audio-btn" id="card-audio-btn-front" title="${t('pronounceWord')}" aria-label="${t('pronounceWord')}">
                 🔊
               </button>
             </div>
@@ -354,38 +386,27 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
           
           <div class="card-center-prompt">
             <h1 class="card-term">${escapeHtml(card.front)}</h1>
-            ${card.transcription ? `<div class="card-transcription">[${escapeHtml(card.transcription)}]</div>` : ''}
-            ${card.partOfSpeech ? `<span class="card-pos-tag">${escapeHtml(card.partOfSpeech)}</span>` : ''}
+            <div class="card-transcription">${card.transcription ? `[${escapeHtml(card.transcription)}]` : ''}</div>
+            ${card.partOfSpeech ? `<span class="card-pos-tag">${escapeHtml(card.partOfSpeech)}</span>` : '<span style="height: 1px;"></span>'}
             ${card.contextSentence ? `
-              <div class="card-context-quote" style="margin-top: 10px;">“${escapeHtml(card.contextSentence)}”</div>
+              <div class="card-context-quote">“${escapeHtml(card.contextSentence)}”</div>
             ` : ''}
 
-            <!-- OPTION 2: ACTIVE INPUT (3 ATTEMPTS) -->
-            <div class="word-recall-box" id="word-recall-box" onclick="event.stopPropagation();" style="margin-top: 20px;">
-              <input type="text" id="word-recall-input" class="word-recall-input" placeholder="${t('typeYourTranslation')}" autocomplete="off" spellcheck="false" autofocus>
-              <button type="button" id="word-recall-check-btn" class="btn btn-primary btn-sm">
+            <!-- Active Recall Word Typing Box (revealed when user chooses Type Answer) -->
+            <div class="word-recall-box hidden" id="word-recall-box" onclick="event.stopPropagation();">
+              <input type="text" id="word-recall-input" class="word-recall-input" placeholder="${t('typeYourTranslation')}" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+              <button type="button" id="word-recall-check-btn" class="btn btn-primary word-recall-submit-btn" aria-label="Submit word">
                 <span>✓</span>
-                <span>${t('shortcutEnterSubmit')}</span>
               </button>
             </div>
 
             <!-- Feedback Alert for Attempts -->
             <div id="word-attempt-feedback" class="attempt-feedback-box hidden"></div>
-
-            <div class="study-choice-divider">
-              <span>${t('optionJustFlip')} (Space)</span>
-            </div>
-
-            <!-- OPTION 1: JUST FLIP BUTTON -->
-            <button type="button" class="btn btn-secondary btn-sm" id="btn-just-flip" style="align-self: center;" onclick="event.stopPropagation();">
-              <span>🔄</span>
-              <span>${t('optionJustFlip')}</span>
-            </button>
           </div>
 
           <div class="card-face-footer">
-            <span>${t('pressSpaceToFlip')}</span>
-            <span style="font-size: 0.75rem; color: var(--text-muted);">${t('sessionQueueRemaining', { count: remainingInSession })}</span>
+            <span>${t('tapToFlipHint')}</span>
+            <span>${t('sessionQueueRemaining', { count: remainingInSession })}</span>
           </div>
         </div>
 
@@ -393,7 +414,7 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
         <div class="flashcard-face flashcard-back">
           <div class="card-face-header">
             <span class="card-lang-tag">${card.targetLang.toUpperCase()}</span>
-            <button type="button" class="audio-btn" id="card-audio-btn-back" title="${t('pronounceWord')}">
+            <button type="button" class="audio-btn" id="card-audio-btn-back" title="${t('pronounceWord')}" aria-label="${t('pronounceWord')}">
               🔊
             </button>
           </div>
@@ -409,87 +430,103 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
             <!-- Recall Outcome Banner -->
             <div id="recall-feedback-banner" class="recall-feedback-banner hidden"></div>
             
-            ${card.contextSentence ? `<div class="card-context-quote" style="margin-top: 12px;">“${escapeHtml(card.contextSentence)}”</div>` : ''}
+            ${card.contextSentence ? `<div class="card-context-quote" style="margin-top: 10px;">“${escapeHtml(card.contextSentence)}”</div>` : ''}
           </div>
 
           <div class="card-face-footer">
             <span class="badge badge-${card.status}">${t(`status${capitalize(card.status)}`)}</span>
-            <span style="font-size: 0.75rem; color: var(--text-muted);">EF: ${Number(card.easeFactor || 2.5).toFixed(2)}</span>
+            <span>EF: ${Number(card.easeFactor || 2.5).toFixed(2)}</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Path A: Self-Evaluation Bar (Remembered vs Forgot) -->
-    <div class="self-eval-bar hidden" id="self-eval-bar">
-      <button type="button" class="btn-self-eval forgot" id="btn-self-forgot">
-        <span>✗</span>
-        <span>${t('selfGradeForgot')}</span>
-      </button>
-      <button type="button" class="btn-self-eval remembered" id="btn-self-remembered">
-        <span>✓</span>
-        <span>${t('selfGradeRemembered')}</span>
-      </button>
-    </div>
+    <!-- BOTTOM ACTION DOCK (THUMB ZONE) -->
+    <div class="study-bottom-dock" id="study-bottom-dock">
+      <!-- BEFORE REVEAL: Primary Paths in Thumb Zone -->
+      <div class="study-choice-row" id="study-choice-row">
+        <button type="button" class="btn btn-secondary btn-dock-action" id="btn-choose-type">
+          <span>⌨️</span>
+          <span>${t('optionTypeAnswer')}</span>
+        </button>
+        <button type="button" class="btn btn-primary btn-dock-action" id="btn-just-flip">
+          <span>🔄</span>
+          <span>${t('btnJustFlipCard')}</span>
+        </button>
+      </div>
 
-    <!-- Rating Buttons Bar (Hidden initially, revealed when flipped) -->
-    <div class="srs-ratings-bar hidden" id="study-ratings-bar">
-      <button type="button" class="rating-btn again" data-rating="1" title="Shortcut: 1 (Re-queue to end of session)">
-        <span class="rating-label">${t('failCardBtn')}</span>
-        <span class="rating-hint">${t('cardRequeued')}</span>
-        <span class="rating-key-badge">1</span>
-      </button>
+      <!-- AFTER REVEAL: ReWord-Style Explicit Tap Fallback (Forgot vs Remembered) -->
+      <div class="self-eval-bar hidden" id="self-eval-bar">
+        <button type="button" class="btn-self-eval forgot" id="btn-self-forgot" title="Swipe Left or Tap">
+          <span>✗</span>
+          <span>${t('btnForgotRepeat')}</span>
+        </button>
+        <button type="button" class="btn-self-eval remembered" id="btn-self-remembered" title="Swipe Right or Tap">
+          <span>✓</span>
+          <span>${t('btnRememberedGotIt')}</span>
+        </button>
+      </div>
 
-      <button type="button" class="rating-btn hard" data-rating="2" title="Shortcut: 2">
-        <span class="rating-label">${t('ratingHard')}</span>
-        <span class="rating-hint">~${Math.max(1, Math.round((card.interval || 0) * 1.2))}d</span>
-        <span class="rating-key-badge">2</span>
-      </button>
+      <!-- Granular SRS Ratings Bar (1-4) -->
+      <div class="srs-ratings-bar hidden" id="study-ratings-bar">
+        <button type="button" class="rating-btn again" data-rating="1" title="Shortcut: 1 (Re-queue to end of session)">
+          <span class="rating-label">${t('failCardBtn')}</span>
+          <span class="rating-hint">${t('cardRequeued')}</span>
+          <span class="rating-key-badge">1</span>
+        </button>
+        <button type="button" class="rating-btn hard" data-rating="2" title="Shortcut: 2">
+          <span class="rating-label">${t('ratingHard')}</span>
+          <span class="rating-hint">~${Math.max(1, Math.round((card.interval || 0) * 1.2))}d</span>
+          <span class="rating-key-badge">2</span>
+        </button>
+        <button type="button" class="rating-btn good" data-rating="3" title="Shortcut: 3 (Pass)">
+          <span class="rating-label">${t('passCardBtn')}</span>
+          <span class="rating-hint">${t('cardPassed')}</span>
+          <span class="rating-key-badge">3</span>
+        </button>
+        <button type="button" class="rating-btn easy" data-rating="4" title="Shortcut: 4 (Easy)">
+          <span class="rating-label">${t('ratingEasy')}</span>
+          <span class="rating-hint">~${card.repetitions === 0 ? 4 : Math.round((card.interval || 1) * (card.easeFactor || 2.5) * 1.3)}d</span>
+          <span class="rating-key-badge">4</span>
+        </button>
+      </div>
 
-      <button type="button" class="rating-btn good" data-rating="3" title="Shortcut: 3 (Pass - removes from session)">
-        <span class="rating-label">${t('passCardBtn')}</span>
-        <span class="rating-hint">${t('cardPassed')}</span>
-        <span class="rating-key-badge">3</span>
-      </button>
+      <!-- Success Continue Bar (when word answered correctly via typing) -->
+      <div id="pass-continue-bar" class="hidden" style="width: 100%;">
+        <button type="button" class="btn btn-primary btn-lg" id="btn-word-next" style="width: 100%; min-height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <span>${t('nextCard')} →</span>
+          <kbd class="kbd-badge" style="background: rgba(255,255,255,0.25); color: #fff; font-size: 0.75rem;">Enter</kbd>
+        </button>
+      </div>
 
-      <button type="button" class="rating-btn easy" data-rating="4" title="Shortcut: 4 (Easy - accelerated interval)">
-        <span class="rating-label">${t('ratingEasy')}</span>
-        <span class="rating-hint">~${card.repetitions === 0 ? 4 : Math.round((card.interval || 1) * (card.easeFactor || 2.5) * 1.3)}d</span>
-        <span class="rating-key-badge">4</span>
-      </button>
-    </div>
-
-    <!-- Success Next Bar (shown when word is answered correctly via typing) -->
-    <div id="pass-continue-bar" class="hidden" style="margin-top: 14px; text-align: center;">
-      <button type="button" class="btn btn-primary btn-lg" id="btn-word-next" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;">
-        <span>${t('nextCard')} →</span>
-        <kbd class="kbd-badge" style="background: rgba(255,255,255,0.25); color: #fff; font-size: 0.75rem;">Enter</kbd>
-      </button>
-    </div>
-
-    <!-- Failure Re-queue Continue Bar (shown when 3 attempts fail) -->
-    <div id="requeue-continue-bar" class="hidden" style="margin-top: 12px; text-align: center;">
-      <button type="button" class="btn btn-danger btn-lg" id="btn-requeue-continue" style="width: 100%;">
-        <span>🔄</span>
-        <span>${t('continueRequeued')} (Enter)</span>
-      </button>
+      <!-- Failure Continue Bar (when 3 attempts fail) -->
+      <div id="requeue-continue-bar" class="hidden" style="width: 100%;">
+        <button type="button" class="btn btn-danger btn-lg" id="btn-requeue-continue" style="width: 100%; min-height: 52px;">
+          <span>🔄</span>
+          <span>${t('continueRequeued')} (Enter)</span>
+        </button>
+      </div>
     </div>
   `;
 
   const flashcardEl = document.getElementById('study-flashcard');
+  const overlayRemembered = document.getElementById('swipe-overlay-remembered');
+  const overlayForgot = document.getElementById('swipe-overlay-forgot');
+  const choiceRow = document.getElementById('study-choice-row');
   const selfEvalBar = document.getElementById('self-eval-bar');
   const ratingsBar = document.getElementById('study-ratings-bar');
   const requeueBar = document.getElementById('requeue-continue-bar');
+  const passBar = document.getElementById('pass-continue-bar');
+  const recallBox = document.getElementById('word-recall-box');
   const recallInput = document.getElementById('word-recall-input');
   const recallCheckBtn = document.getElementById('word-recall-check-btn');
-  const attemptBadge = document.getElementById('attempt-badge');
-  const attemptFeedback = document.getElementById('word-attempt-feedback');
-  const feedbackBanner = document.getElementById('recall-feedback-banner');
+  const btnChooseType = document.getElementById('btn-choose-type');
   const btnJustFlip = document.getElementById('btn-just-flip');
   const btnSelfRemembered = document.getElementById('btn-self-remembered');
   const btnSelfForgot = document.getElementById('btn-self-forgot');
-
-  // Audio pronunciation listeners
+  const attemptBadge = document.getElementById('attempt-badge');
+  const attemptFeedback = document.getElementById('word-attempt-feedback');
+  const feedbackBanner = document.getElementById('recall-feedback-banner');
   const frontAudioBtn = document.getElementById('card-audio-btn-front');
   const backAudioBtn = document.getElementById('card-audio-btn-back');
 
@@ -520,46 +557,134 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
     playBackAudio();
   });
 
-  // Path A: Just Flip card
   const doFlip = () => {
     if (isFlipped) return;
     isFlipped = true;
-    flashcardEl.classList.add('flipped');
+    if (flashcardEl) flashcardEl.classList.add('flipped');
+    if (choiceRow) choiceRow.classList.add('hidden');
+    if (recallBox) recallBox.classList.add('hidden');
     if (selfEvalBar) selfEvalBar.classList.remove('hidden');
     if (ratingsBar) ratingsBar.classList.remove('hidden');
     playBackAudio();
   };
 
-  if (btnJustFlip) btnJustFlip.addEventListener('click', (e) => {
-    e.stopPropagation();
-    doFlip();
-  });
-
-  // Clicking on the front face focuses the active typing input instead of accidentally flipping
-  flashcardEl.addEventListener('click', (e) => {
-    if (e.target.closest('.audio-btn') || e.target.closest('#pass-continue-bar') || e.target.closest('#requeue-continue-bar')) return;
-    if (e.target.closest('#btn-just-flip')) {
+  if (btnJustFlip) {
+    btnJustFlip.addEventListener('click', (e) => {
+      e.stopPropagation();
       doFlip();
-      return;
-    }
-    if (!isFlipped && recallInput) {
-      recallInput.focus();
-    }
-  });
-
-  // Auto-focus recall input immediately on card render
-  const focusWordRecallInput = () => {
-    if (!isFlipped && recallInput && document.activeElement !== recallInput) {
-      recallInput.focus();
-    }
-  };
-  focusWordRecallInput();
-  setTimeout(focusWordRecallInput, 50);
-  if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(focusWordRecallInput);
+    });
   }
 
-  // Self-Evaluation Listeners (Path A)
+  // Type Answer Path Selection
+  if (btnChooseType) {
+    btnChooseType.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isTypingActive = true;
+      if (recallBox) recallBox.classList.remove('hidden');
+      if (choiceRow) choiceRow.classList.add('hidden');
+      if (recallInput) {
+        recallInput.focus();
+      }
+    });
+  }
+
+  // Card click: flip if not typing and not dragging
+  flashcardEl.addEventListener('click', (e) => {
+    if (e.target.closest('.audio-btn') || e.target.closest('.word-recall-box')) return;
+    if (!isFlipped && !isTypingActive) {
+      doFlip();
+    }
+  });
+
+  // Hardware-Accelerated Touch Gesture Swiping (Specification 3)
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchDeltaX = 0;
+  let touchDeltaY = 0;
+  let touchStartTime = 0;
+  let isSwiping = false;
+
+  const onTouchStart = (e) => {
+    if (e.touches.length !== 1) return;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchDeltaX = 0;
+    touchDeltaY = 0;
+    touchStartTime = Date.now();
+    isSwiping = false;
+  };
+
+  const onTouchMove = (e) => {
+    if (e.touches.length !== 1) return;
+    touchDeltaX = e.touches[0].clientX - touchStartX;
+    touchDeltaY = e.touches[0].clientY - touchStartY;
+
+    if (Math.abs(touchDeltaX) > Math.abs(touchDeltaY) && Math.abs(touchDeltaX) > 8) {
+      isSwiping = true;
+      if (e.cancelable) e.preventDefault();
+      flashcardEl.classList.add('swiping');
+      flashcardEl.style.transform = `translate3d(${touchDeltaX}px, 0, 0) rotate(${touchDeltaX * 0.045}deg)`;
+
+      if (touchDeltaX > 20) {
+        const opacity = Math.min(1, (touchDeltaX - 20) / 60);
+        if (overlayRemembered) overlayRemembered.style.opacity = String(opacity);
+        if (overlayForgot) overlayForgot.style.opacity = '0';
+      } else if (touchDeltaX < -20) {
+        const opacity = Math.min(1, (-touchDeltaX - 20) / 60);
+        if (overlayForgot) overlayForgot.style.opacity = String(opacity);
+        if (overlayRemembered) overlayRemembered.style.opacity = '0';
+      } else {
+        if (overlayRemembered) overlayRemembered.style.opacity = '0';
+        if (overlayForgot) overlayForgot.style.opacity = '0';
+      }
+    }
+  };
+
+  const onTouchEnd = () => {
+    if (!isSwiping) {
+      const elapsed = Date.now() - touchStartTime;
+      if (Math.abs(touchDeltaX) < 10 && Math.abs(touchDeltaY) < 10 && elapsed < 350) {
+        if (!isFlipped && !isTypingActive) {
+          doFlip();
+        }
+      }
+      return;
+    }
+
+    flashcardEl.classList.remove('swiping');
+
+    if (touchDeltaX > 80) {
+      // Swipe Right -> Remembered / Pass
+      flashcardEl.classList.add('animating-exit-right');
+      const outcome = card.hadErrorInSession ? 'recovered' : 'clean';
+      setTimeout(() => {
+        if (callbacks.onPass) callbacks.onPass(outcome, { rating: RATING.GOOD });
+      }, 220);
+    } else if (touchDeltaX < -80) {
+      // Swipe Left -> Forgot / Repeat
+      flashcardEl.classList.add('animating-exit-left');
+      setTimeout(() => {
+        if (callbacks.onFail) callbacks.onFail();
+        if (callbacks.onNext) callbacks.onNext();
+      }, 220);
+    } else {
+      // Spring back to center
+      flashcardEl.classList.add('animating-reset');
+      flashcardEl.style.transform = isFlipped ? 'rotateY(180deg)' : '';
+      if (overlayRemembered) overlayRemembered.style.opacity = '0';
+      if (overlayForgot) overlayForgot.style.opacity = '0';
+      setTimeout(() => {
+        flashcardEl.classList.remove('animating-reset');
+      }, 200);
+    }
+  };
+
+  flashcardEl.addEventListener('touchstart', onTouchStart, { passive: true });
+  flashcardEl.addEventListener('touchmove', onTouchMove, { passive: false });
+  flashcardEl.addEventListener('touchend', onTouchEnd);
+  flashcardEl.addEventListener('touchcancel', onTouchEnd);
+
+  // Self-Evaluation Listeners (Explicit Tap Fallback)
   if (btnSelfRemembered) {
     btnSelfRemembered.addEventListener('click', () => {
       const outcome = card.hadErrorInSession ? 'recovered' : 'clean';
@@ -574,7 +699,7 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
     });
   }
 
-  // Path B: Active Recall Typing Submit with 3-Attempt Rule
+  // Active Recall Typing Submit with 3-Attempt Rule (Specification 4)
   const handleRecallSubmit = () => {
     if (isFlipped) return;
     const typed = recallInput ? recallInput.value.trim() : '';
@@ -587,16 +712,18 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
 
     if (isMatch) {
       // SUCCESS!
+      if (recallInput) {
+        recallInput.blur(); // Dismiss virtual keyboard!
+        recallInput.disabled = true;
+      }
+      window._lastWordSubmitTime = Date.now();
+
       isFlipped = true;
       flashcardEl.classList.add('flipped');
       playBackAudio();
 
-      // Disable and blur recall input so subsequent keystrokes (like 1-4 or Enter) target rating actions
-      if (recallInput) {
-        recallInput.blur();
-        recallInput.disabled = true;
-      }
-      window._lastWordSubmitTime = Date.now();
+      if (choiceRow) choiceRow.classList.add('hidden');
+      if (recallBox) recallBox.classList.add('hidden');
 
       const outcome = card.hadErrorInSession 
         ? 'recovered' 
@@ -610,7 +737,6 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
           : (card.currentAttempt === 2 ? t('correctAttempt2') : t('correctAttempt3'));
       }
 
-      // Display the 4 options so the user can choose or review
       ratingsBar.classList.remove('hidden');
       const suggestedRating = outcome === 'clean' ? RATING.GOOD : (outcome === 'assisted' ? RATING.HARD : RATING.AGAIN);
       ratingsBar.querySelectorAll('.rating-btn').forEach(btn => {
@@ -618,20 +744,14 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
         btn.classList.toggle('active-srs-grade', btnRating === suggestedRating);
       });
 
-      const passBar = document.getElementById('pass-continue-bar');
       if (passBar) passBar.classList.remove('hidden');
-
       const btnWordNext = document.getElementById('btn-word-next');
       if (btnWordNext) {
-        // Delay focus slightly so the Enter keystroke that submitted the word does not auto-advance
         setTimeout(() => {
-          if (btnWordNext && isFlipped) {
-            btnWordNext.focus();
-          }
-        }, 200);
-
+          if (btnWordNext && isFlipped) btnWordNext.focus();
+        }, 180);
         btnWordNext.onclick = () => {
-          if (Date.now() - (window._lastWordSubmitTime || 0) < 300) return;
+          if (Date.now() - (window._lastWordSubmitTime || 0) < 250) return;
           if (callbacks.onPass) {
             callbacks.onPass(outcome, { rating: outcome === 'assisted' ? RATING.HARD : RATING.GOOD });
           }
@@ -643,51 +763,54 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
         card.currentAttempt = 2;
         attemptsRemaining = 2;
         if (attemptBadge) {
-          attemptBadge.textContent = t('attemptsRemaining', { n: 2 });
+          attemptBadge.textContent = t('attemptsLeftShort', { n: 2 });
           attemptBadge.className = 'attempt-badge warning';
         }
         if (attemptFeedback) {
           attemptFeedback.classList.remove('hidden');
           attemptFeedback.className = 'attempt-feedback-box error';
-          attemptFeedback.textContent = "Incorrect — 2 attempts remaining";
+          attemptFeedback.textContent = "Incorrect — 2 attempts left";
         }
         if (recallInput) {
           recallInput.classList.remove('shake');
           void recallInput.offsetWidth;
           recallInput.classList.add('shake');
           recallInput.value = '';
-          recallInput.focus();
+          recallInput.focus(); // Keep keyboard open for immediate re-typing!
         }
       } else if (card.currentAttempt === 2) {
         card.currentAttempt = 3;
         attemptsRemaining = 1;
         if (attemptBadge) {
-          attemptBadge.textContent = t('attemptsRemaining', { n: 1 });
+          attemptBadge.textContent = t('attemptsLeftShort', { n: 1 });
           attemptBadge.className = 'attempt-badge danger';
         }
         if (attemptFeedback) {
           attemptFeedback.classList.remove('hidden');
           attemptFeedback.className = 'attempt-feedback-box error';
-          attemptFeedback.textContent = "Incorrect — 1 attempt remaining";
+          attemptFeedback.textContent = "Incorrect — 1 attempt left";
         }
         if (recallInput) {
           recallInput.classList.remove('shake');
           void recallInput.offsetWidth;
           recallInput.classList.add('shake');
           recallInput.value = '';
-          recallInput.focus();
+          recallInput.focus(); // Keep keyboard open for immediate re-typing!
         }
       } else {
-        // 3 ATTEMPTS EXHAUSTED: Reveal correct answer & mark failed (re-queue)
+        // 3 ATTEMPTS EXHAUSTED: Dismiss virtual keyboard & reveal correct answer
+        if (recallInput) {
+          recallInput.blur(); // Dismiss virtual keyboard!
+          recallInput.disabled = true;
+        }
+        window._lastWordSubmitTime = Date.now();
+
         isFlipped = true;
         flashcardEl.classList.add('flipped');
         playBackAudio();
 
-        if (recallInput) {
-          recallInput.blur();
-          recallInput.disabled = true;
-        }
-        window._lastWordSubmitTime = Date.now();
+        if (choiceRow) choiceRow.classList.add('hidden');
+        if (recallBox) recallBox.classList.add('hidden');
 
         if (attemptBadge) {
           attemptBadge.textContent = '0 left';
@@ -700,7 +823,7 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
           feedbackBanner.textContent = t('attemptsExhausted');
         }
 
-        requeueBar.classList.remove('hidden');
+        if (requeueBar) requeueBar.classList.remove('hidden');
 
         if (callbacks.onFail) {
           callbacks.onFail();
@@ -709,13 +832,10 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
         const btnRequeueContinue = document.getElementById('btn-requeue-continue');
         if (btnRequeueContinue) {
           setTimeout(() => {
-            if (btnRequeueContinue && isFlipped) {
-              btnRequeueContinue.focus();
-            }
-          }, 200);
-
+            if (btnRequeueContinue && isFlipped) btnRequeueContinue.focus();
+          }, 180);
           btnRequeueContinue.onclick = () => {
-            if (Date.now() - (window._lastWordSubmitTime || 0) < 300) return;
+            if (Date.now() - (window._lastWordSubmitTime || 0) < 250) return;
             if (callbacks.onNext) callbacks.onNext();
           };
         }
@@ -739,7 +859,7 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
     });
   }
 
-  // Rating buttons listeners (for Option 1 or granular manual grading)
+  // Rating buttons listeners (1-4)
   ratingsBar.querySelectorAll('.rating-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const rating = parseInt(btn.getAttribute('data-rating'), 10);
@@ -763,14 +883,6 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
   };
 }
 
-/**
- * Renders the Study screen for Definition Practice Mode
- * Strictly adheres to Section 4.2 & Section 3:
- *  - Path A: "Just Flip Card" (<kbd>Space</kbd>)
- *  - Path B: 3-Attempt Fuzzy Semantic Evaluation with Keyword Coverage & Dice coefficient
- *  - Visual similarity score, missing key concept hints, side-by-side diff
- *  - Manual "Override: Mark as Correct" button after reveal
- */
 export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) {
   const container = document.getElementById('study-active-area');
   if (!container) return;
@@ -784,7 +896,7 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
 
   const progressPct = Math.round((Math.max(0, totalInitial - remainingInSession + 1) / totalInitial) * 100);
 
-  // Update header progress
+  // Update header progress telemetry
   const counterEl = document.getElementById('study-progress-counter');
   const remainingEl = document.getElementById('study-queue-remaining');
   const progBarEl = document.getElementById('study-progress-bar');
@@ -811,9 +923,9 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
         <span class="card-lang-tag">${langCode.toUpperCase()} ${t('defPracticeHeader')}</span>
         <div style="display: flex; align-items: center; gap: 8px;">
           <span class="attempt-badge ${attemptsRemaining === 1 ? 'danger' : (attemptsRemaining === 2 ? 'warning' : '')}" id="def-attempt-badge">
-            ${t('attemptsRemaining', { n: attemptsRemaining })}
+            ${t('attemptsLeftShort', { n: attemptsRemaining })}
           </span>
-          <button type="button" class="audio-btn" id="def-audio-btn" title="${t('pronounceWord')}">🔊</button>
+          <button type="button" class="audio-btn" id="def-audio-btn" title="${t('pronounceWord')}" aria-label="${t('pronounceWord')}">🔊</button>
         </div>
       </div>
 
@@ -830,14 +942,14 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
 
       <!-- User Active Typing Area -->
       <div class="definition-input-area" id="def-input-area">
-        <textarea id="def-user-input" class="definition-textarea" placeholder="${t('typeYourDefinition')}" autofocus></textarea>
-        <div class="definition-submit-bar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-def-flip">
+        <textarea id="def-user-input" class="definition-textarea" placeholder="${t('typeYourDefinition')}" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" autofocus></textarea>
+        <div class="definition-submit-bar">
+          <button type="button" class="btn btn-secondary" id="btn-def-flip" style="min-height: 48px;">
             <span>🔄</span>
-            <span>${t('optionJustFlip')} (Space)</span>
+            <span>${t('btnJustFlipCard')} (Space)</span>
           </button>
 
-          <button type="button" class="btn btn-primary" id="def-submit-btn">
+          <button type="button" class="btn btn-primary" id="def-submit-btn" style="min-height: 48px;">
             <span>✓</span>
             <span>${t('submitAnswer')} (Enter)</span>
           </button>
@@ -850,19 +962,19 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
       <!-- Fuzzy Evaluation Results Box -->
       <div id="def-eval-container" class="hidden"></div>
 
-      <!-- Self-Evaluation Bar for Just Flip (Remembered vs Forgot) -->
+      <!-- Self-Evaluation Bar for Just Flip (Forgot vs Remembered) -->
       <div class="self-eval-bar hidden" id="def-self-eval-bar">
         <button type="button" class="btn-self-eval forgot" id="btn-def-self-forgot">
           <span>✗</span>
-          <span>${t('selfGradeForgot')}</span>
+          <span>${t('btnForgotRepeat')}</span>
         </button>
         <button type="button" class="btn-self-eval remembered" id="btn-def-self-remembered">
           <span>✓</span>
-          <span>${t('selfGradeRemembered')}</span>
+          <span>${t('btnRememberedGotIt')}</span>
         </button>
       </div>
 
-      <!-- SRS Ratings Toolbar -->
+      <!-- SRS Ratings Toolbar (1-4) -->
       <div class="srs-ratings-bar hidden" id="def-ratings-bar">
         <button type="button" class="rating-btn again" data-rating="1">
           <span class="rating-label">${t('failCardBtn')}</span>
@@ -889,11 +1001,11 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
       <!-- Re-queue continue & override bar (shown when 3 attempts fail) -->
       <div id="def-requeue-bar" class="hidden" style="margin-top: 14px; text-align: center;">
         <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-          <button type="button" class="btn btn-secondary btn-lg" id="btn-def-override">
+          <button type="button" class="btn btn-secondary btn-lg" id="btn-def-override" style="min-height: 52px;">
             <span>✓</span>
             <span>${t('overrideCorrectBtn')}</span>
           </button>
-          <button type="button" class="btn btn-danger btn-lg" id="btn-def-requeue-continue" style="flex: 1;">
+          <button type="button" class="btn btn-danger btn-lg" id="btn-def-requeue-continue" style="flex: 1; min-height: 52px;">
             <span>🔄</span>
             <span>${t('continueRequeued')} (Enter)</span>
           </button>
@@ -930,13 +1042,12 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
   const handleJustFlip = () => {
     if (evaluated) return;
     evaluated = true;
-    userInput.disabled = true;
-    submitBtn.classList.add('hidden');
-    btnDefFlip.classList.add('hidden');
+    if (userInput) userInput.disabled = true;
+    if (submitBtn) submitBtn.classList.add('hidden');
+    if (btnDefFlip) btnDefFlip.classList.add('hidden');
 
     playAudio();
 
-    // Run evaluation against empty string to show reference diff
     const evalResult = evaluateDefinition('', card.back, card.keyConcepts, langCode);
     renderEvaluationResults(evalResult, false, false);
     if (selfEvalBar) selfEvalBar.classList.remove('hidden');
@@ -1013,7 +1124,7 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
         <!-- Grade acceptance & override bar -->
         ${showAcceptGrade ? `
           <div class="eval-action-bar">
-            <button type="button" class="btn btn-primary btn-sm" id="btn-accept-grade">
+            <button type="button" class="btn btn-primary btn-sm" id="btn-accept-grade" style="min-height: 44px;">
               <span>✓ ${t('acceptGrade')} (${getRatingName(evalResult.suggestedRating)})</span>
             </button>
             <span style="font-size: 0.8rem; color: var(--text-muted);">${t('manualOverride')}:</span>
@@ -1036,7 +1147,7 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
     }
   };
 
-  // Path B: 3-Attempt Fuzzy Evaluation Handler (Section 4.2)
+  // Path B: 3-Attempt Fuzzy Evaluation Handler (Specification 4)
   const doEvaluate = () => {
     if (evaluated) return;
     const userText = userInput.value.trim();
@@ -1048,9 +1159,12 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
     const evalResult = evaluateDefinition(userText, card.back, card.keyConcepts, langCode);
 
     if (evalResult.isPassed) {
-      // ACCURATE MATCH (>= 75%): Pass turn & remove from session!
+      // ACCURATE MATCH (>= 75%): Dismiss virtual keyboard & reveal!
       evaluated = true;
-      userInput.disabled = true;
+      if (userInput) {
+        userInput.blur(); // Dismiss virtual keyboard!
+        userInput.disabled = true;
+      }
       submitBtn.classList.add('hidden');
       btnDefFlip.classList.add('hidden');
 
@@ -1071,36 +1185,51 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
         card.currentAttempt = 2;
         attemptsRemaining = 2;
         if (attemptBadge) {
-          attemptBadge.textContent = t('attemptsRemaining', { n: 2 });
+          attemptBadge.textContent = t('attemptsLeftShort', { n: 2 });
           attemptBadge.className = 'attempt-badge warning';
         }
 
         if (attemptHint) {
           attemptHint.classList.remove('hidden');
           attemptHint.className = 'attempt-feedback-box error';
-          attemptHint.textContent = `${evalResult.scorePercent}% Match — Incorrect, 2 attempts remaining (${evalResult.missingCount} key concepts missing)`;
+          attemptHint.textContent = `${evalResult.scorePercent}% Match — 2 attempts left (${evalResult.missingCount} concepts missing)`;
         }
 
-        userInput.focus();
+        if (userInput) {
+          userInput.classList.remove('shake');
+          void userInput.offsetWidth;
+          userInput.classList.add('shake');
+          userInput.value = '';
+          userInput.focus(); // Keep keyboard open for re-typing!
+        }
       } else if (card.currentAttempt === 2) {
         card.currentAttempt = 3;
         attemptsRemaining = 1;
         if (attemptBadge) {
-          attemptBadge.textContent = t('attemptsRemaining', { n: 1 });
+          attemptBadge.textContent = t('attemptsLeftShort', { n: 1 });
           attemptBadge.className = 'attempt-badge danger';
         }
 
         if (attemptHint) {
           attemptHint.classList.remove('hidden');
           attemptHint.className = 'attempt-feedback-box error';
-          attemptHint.textContent = `${evalResult.scorePercent}% Match — Incorrect, 1 attempt remaining (${evalResult.missingCount} key concepts missing)`;
+          attemptHint.textContent = `${evalResult.scorePercent}% Match — 1 attempt left (${evalResult.missingCount} concepts missing)`;
         }
 
-        userInput.focus();
+        if (userInput) {
+          userInput.classList.remove('shake');
+          void userInput.offsetWidth;
+          userInput.classList.add('shake');
+          userInput.value = '';
+          userInput.focus(); // Keep keyboard open for re-typing!
+        }
       } else {
-        // 3 ATTEMPTS EXHAUSTED: Reveal full diff and mark failed (re-queue)
+        // 3 ATTEMPTS EXHAUSTED: Dismiss virtual keyboard & reveal full diff!
         evaluated = true;
-        userInput.disabled = true;
+        if (userInput) {
+          userInput.blur(); // Dismiss virtual keyboard!
+          userInput.disabled = true;
+        }
         submitBtn.classList.add('hidden');
         btnDefFlip.classList.add('hidden');
 
@@ -1122,7 +1251,6 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
           callbacks.onFail();
         }
 
-        // Override button: allows learner to override and mark as correct
         const btnOverride = document.getElementById('btn-def-override');
         if (btnOverride) {
           btnOverride.onclick = () => {
@@ -1154,7 +1282,7 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
     }
   });
 
-  // Rating buttons listeners for manual override
+  // Granular rating buttons listeners for manual grading (1-4)
   ratingsBar.querySelectorAll('.rating-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const rating = parseInt(btn.getAttribute('data-rating'), 10);
@@ -1171,18 +1299,6 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
     });
   });
 
-  // Auto-focus definition textarea immediately on render
-  const focusDefInput = () => {
-    if (!evaluated && userInput && document.activeElement !== userInput) {
-      userInput.focus();
-    }
-  };
-  focusDefInput();
-  setTimeout(focusDefInput, 50);
-  if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(focusDefInput);
-  }
-
   return {
     evaluate: doEvaluate,
     flip: handleJustFlip,
@@ -1191,9 +1307,6 @@ export function renderDefinitionStudyCard(card, queueInfo = {}, callbacks = {}) 
   };
 }
 
-/**
- * Renders the session completed congratulatory card with mastery stats
- */
 export function renderSessionCompleted(summary = {}, onReturn = () => {}) {
   const container = document.getElementById('study-active-area');
   if (!container) return;
@@ -1437,4 +1550,70 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+/**
+ * Enables smooth touch swipe-down gestures on mobile Bottom Sheets
+ * Specification 5.2
+ */
+export function initBottomSheetModalGestures() {
+  document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+    const container = backdrop.querySelector('.modal-container');
+    const dragHandle = backdrop.querySelector('.sheet-drag-handle');
+    if (!container) return;
+
+    let startY = 0;
+    let deltaY = 0;
+    let isDragging = false;
+
+    const onTouchStart = (e) => {
+      if (window.innerWidth >= 768) return;
+      startY = e.touches[0].clientY;
+      deltaY = 0;
+      isDragging = true;
+      container.style.transition = 'none';
+    };
+
+    const onTouchMove = (e) => {
+      if (!isDragging || window.innerWidth >= 768) return;
+      deltaY = e.touches[0].clientY - startY;
+      if (deltaY > 0) {
+        container.style.transform = `translateY(${deltaY}px)`;
+        if (e.cancelable) e.preventDefault();
+      }
+    };
+
+    const onTouchEnd = () => {
+      if (!isDragging || window.innerWidth >= 768) return;
+      isDragging = false;
+      if (deltaY > 60) {
+        container.style.transition = 'transform 0.2s ease-out';
+        container.style.transform = 'translateY(100%)';
+        setTimeout(() => {
+          container.style.transform = '';
+          container.style.transition = '';
+          backdrop.classList.add('hidden');
+        }, 180);
+      } else {
+        container.style.transition = 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+        container.style.transform = '';
+      }
+    };
+
+    if (dragHandle) {
+      dragHandle.addEventListener('touchstart', onTouchStart, { passive: true });
+      dragHandle.addEventListener('touchmove', onTouchMove, { passive: false });
+      dragHandle.addEventListener('touchend', onTouchEnd);
+      dragHandle.addEventListener('click', () => {
+        backdrop.classList.add('hidden');
+      });
+    }
+
+    const header = backdrop.querySelector('.modal-header');
+    if (header) {
+      header.addEventListener('touchstart', onTouchStart, { passive: true });
+      header.addEventListener('touchmove', onTouchMove, { passive: false });
+      header.addEventListener('touchend', onTouchEnd);
+    }
+  });
 }
