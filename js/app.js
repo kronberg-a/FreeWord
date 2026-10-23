@@ -562,6 +562,9 @@ function setupGlobalKeyboardShortcuts() {
 
     // Space: flip / reveal card (only if not typing), or advance if next button is visible
     if (e.code === 'Space' && !isTyping) {
+      if (Date.now() - (window._lastWordSubmitTime || 0) < 300) {
+        return;
+      }
       e.preventDefault();
       const btnNext = document.getElementById('btn-word-next');
       if (btnNext && !btnNext.closest('.hidden')) {
@@ -590,6 +593,9 @@ function setupGlobalKeyboardShortcuts() {
 
     // Enter key when next button, failure continue button, or accept grade button is visible
     if (e.key === 'Enter') {
+      if (Date.now() - (window._lastWordSubmitTime || 0) < 300) {
+        return; // Ignore Enter keystroke that submitted the word input
+      }
       const btnNext = document.getElementById('btn-word-next');
       if (btnNext && !btnNext.closest('.hidden')) {
         e.preventDefault();

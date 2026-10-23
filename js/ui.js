@@ -591,6 +591,13 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
       flashcardEl.classList.add('flipped');
       playBackAudio();
 
+      // Disable and blur recall input so subsequent keystrokes (like 1-4 or Enter) target rating actions
+      if (recallInput) {
+        recallInput.blur();
+        recallInput.disabled = true;
+      }
+      window._lastWordSubmitTime = Date.now();
+
       const outcome = card.hadErrorInSession 
         ? 'recovered' 
         : (card.currentAttempt === 1 ? 'clean' : 'assisted');
@@ -603,11 +610,12 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
           : (card.currentAttempt === 2 ? t('correctAttempt2') : t('correctAttempt3'));
       }
 
+      // Display the 4 options so the user can choose or review
       ratingsBar.classList.remove('hidden');
+      const suggestedRating = outcome === 'clean' ? RATING.GOOD : (outcome === 'assisted' ? RATING.HARD : RATING.AGAIN);
       ratingsBar.querySelectorAll('.rating-btn').forEach(btn => {
         const btnRating = parseInt(btn.getAttribute('data-rating'), 10);
-        const matchRating = outcome === 'clean' ? RATING.GOOD : (outcome === 'assisted' ? RATING.HARD : RATING.AGAIN);
-        btn.classList.toggle('active-srs-grade', btnRating === matchRating);
+        btn.classList.toggle('active-srs-grade', btnRating === suggestedRating);
       });
 
       const passBar = document.getElementById('pass-continue-bar');
@@ -615,8 +623,15 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
 
       const btnWordNext = document.getElementById('btn-word-next');
       if (btnWordNext) {
-        btnWordNext.focus();
+        // Delay focus slightly so the Enter keystroke that submitted the word does not auto-advance
+        setTimeout(() => {
+          if (btnWordNext && isFlipped) {
+            btnWordNext.focus();
+          }
+        }, 200);
+
         btnWordNext.onclick = () => {
+          if (Date.now() - (window._lastWordSubmitTime || 0) < 300) return;
           if (callbacks.onPass) {
             callbacks.onPass(outcome, { rating: outcome === 'assisted' ? RATING.HARD : RATING.GOOD });
           }
@@ -668,6 +683,12 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
         flashcardEl.classList.add('flipped');
         playBackAudio();
 
+        if (recallInput) {
+          recallInput.blur();
+          recallInput.disabled = true;
+        }
+        window._lastWordSubmitTime = Date.now();
+
         if (attemptBadge) {
           attemptBadge.textContent = '0 left';
           attemptBadge.className = 'attempt-badge danger';
@@ -687,8 +708,14 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
 
         const btnRequeueContinue = document.getElementById('btn-requeue-continue');
         if (btnRequeueContinue) {
-          btnRequeueContinue.focus();
+          setTimeout(() => {
+            if (btnRequeueContinue && isFlipped) {
+              btnRequeueContinue.focus();
+            }
+          }, 200);
+
           btnRequeueContinue.onclick = () => {
+            if (Date.now() - (window._lastWordSubmitTime || 0) < 300) return;
             if (callbacks.onNext) callbacks.onNext();
           };
         }
@@ -696,11 +723,17 @@ export function renderWordStudyCard(card, queueInfo = {}, callbacks = {}) {
     }
   };
 
-  if (recallCheckBtn) recallCheckBtn.addEventListener('click', handleRecallSubmit);
+  if (recallCheckBtn) {
+    recallCheckBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleRecallSubmit();
+    });
+  }
   if (recallInput) {
     recallInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
+        e.stopPropagation();
         handleRecallSubmit();
       }
     });
